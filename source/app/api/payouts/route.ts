@@ -1,31 +1,63 @@
 import { NextResponse } from "next/server";
 import { createTransfer, getTransferStatus } from "@/lib/circle";
-import { listPayees, updatePayeeStatus } from "@/lib/store";
+import {
+  createPayout,
+  listPayees,
+  listPayouts,
+  listPayoutsByIds,
+  updatePayeeStatus,
+  updatePayoutStatus,
+} from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/**
- * Triggers a USDC payout for every currently-pending payee.
- *
- * For each pending payee this: marks them "sending" -> asks lib/circle.ts to
- * create a transfer -> waits for it to settle -> marks them "sent" or
- * "failed". Payouts run concurrently across payees but are awaited here so
- * the response reflects final status, which keeps the dashboard's UI simple
- * (call the endpoint, then refetch the payee list). For a larger payee list
- * this would move to a background job / webhook-driven status updates
- * instead of an in-request wait loop.
- */
-export async function POST() {
-  const payees = await listPayees();
-  const pending = payees.filter((p) => p.status === "pending" || p.status === "failed");
+/** The payout ledger, newest first — what the Activity tab reads. */
+export async function GET() {
+  return NextResponse.json({ payouts: await listPayouts() });
+}
 
-  if (pending.length === 0) {
-    return NextResponse.json({ processed: 0, payees: await listPayees() });
+/**
+ * Executes a payout run.
+ *
+ * For each queued payee this opens a `Payout` ledger row *before* attempting
+ * anything, then marks the payee "sending" -> creates a Circle transfer ->
+ * waits for it to settle -> writes the terminal status to both the ledger row
+ * and the payee. Opening the row first means a crash mid-run still leaves a
+ * record of what was intended, rather than money moving with nothing to show
+ * for it.
+ *
+ * The response carries the ids of the rows this run wrote, which is what the
+ * receipt screen reads back.
+ *
+ * Accepts an optional `{ payeeIds: string[] }` body so the review gate can
+ * hold back specific recipients; with no body, every queued payee is paid.
+ */
+export async function POST(request: Request) {
+  let requestedIds: string[] | null = null;
+  try {
+    const body = await request.json();
+    if (Array.isArray(body?.payeeIds)) {
+      requestedIds = body.payeeIds.filter((id: unknown) => typeof id === "string");
+    }
+  } catch {
+    // No body is the normal case — pay everything queued.
   }
 
-  await Promise.all(
-    pending.map(async (payee) => {
+  const payees = await listPayees();
+  const queued = payees.filter(
+    (p) =>
+      (p.status === "pending" || p.status === "failed") &&
+      (requestedIds === null || requestedIds.includes(p.id))
+  );
+
+  if (queued.length === 0) {
+    return NextResponse.json({ processed: 0, payoutIds: [], payees: await listPayees() });
+  }
+
+  const payoutIds = await Promise.all(
+    queued.map(async (payee) => {
+      const payout = await createPayout(payee.id, payee.amountUsdc);
       await updatePayeeStatus(payee.id, "sending");
 
       try {
@@ -35,34 +67,45 @@ export async function POST() {
         });
 
         if (created.status === "failed") {
-          await updatePayeeStatus(payee.id, "failed", {
-            failureReason: created.errorMessage ?? "Transfer creation failed.",
-          });
-          return;
+          const reason = created.errorMessage ?? "Transfer creation failed.";
+          await updatePayoutStatus(payout.id, "failed", { failureReason: reason });
+          await updatePayeeStatus(payee.id, "failed", { failureReason: reason });
+          return payout.id;
         }
 
         // Poll once for a final state. In mock mode this resolves quickly;
-        // against the real Circle API you'd typically poll on an interval
-        // or, better, listen for Circle's webhook notification instead.
+        // against the real Circle API this moves to webhooks (Phase 3).
         const final = await getTransferStatus(created.transferId);
 
         if (final.status === "complete") {
+          await updatePayoutStatus(payout.id, "sent", { transferId: created.transferId });
           await updatePayeeStatus(payee.id, "sent", { transferId: created.transferId });
         } else {
+          const reason = final.errorMessage ?? "Transfer did not complete.";
+          await updatePayoutStatus(payout.id, "failed", {
+            transferId: created.transferId,
+            failureReason: reason,
+          });
           await updatePayeeStatus(payee.id, "failed", {
             transferId: created.transferId,
-            failureReason: final.errorMessage ?? "Transfer did not complete.",
+            failureReason: reason,
           });
         }
       } catch (err) {
         console.error(`Payout failed for payee ${payee.id}:`, err);
-        await updatePayeeStatus(payee.id, "failed", {
-          failureReason: err instanceof Error ? err.message : "Unknown error.",
-        });
+        const reason = err instanceof Error ? err.message : "Unknown error.";
+        await updatePayoutStatus(payout.id, "failed", { failureReason: reason });
+        await updatePayeeStatus(payee.id, "failed", { failureReason: reason });
       }
+
+      return payout.id;
     })
   );
 
-  const updated = await listPayees();
-  return NextResponse.json({ processed: pending.length, payees: updated });
+  return NextResponse.json({
+    processed: queued.length,
+    payoutIds,
+    payouts: await listPayoutsByIds(payoutIds),
+    payees: await listPayees(),
+  });
 }

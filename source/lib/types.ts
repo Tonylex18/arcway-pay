@@ -1,10 +1,11 @@
 /**
  * Shared domain types for the payout app.
  *
- * MVP NOTE: the current persistence layer (lib/store.ts) is a JSON file on
- * disk. These types are written so that swapping the store for Postgres +
- * Prisma later is a drop-in change — a `Payee` row here maps 1:1 to what a
- * `Payee` Prisma model would look like.
+ * These are the shapes the UI and API routes speak. They map 1:1 onto the
+ * Prisma models in prisma/schema.prisma, with two deliberate conversions
+ * applied at the store boundary (lib/store.ts): `Decimal` becomes `number`,
+ * and `DateTime` becomes an ISO-8601 `string`, so nothing above the store
+ * has to know Prisma's runtime types.
  */
 
 export type PayeeStatus = "pending" | "sending" | "sent" | "failed";
@@ -22,6 +23,11 @@ export interface Payee {
    * deterministically-generated fake address so the UI still looks real.
    */
   walletAddress: string;
+  /**
+   * Set once the payee has signed in and claimed their embedded wallet.
+   * Absent means unclaimed — the amber "Not yet" state in the dashboard.
+   */
+  privyUserId?: string;
   status: PayeeStatus;
   /** Circle transfer id once a payout has been attempted, if any. */
   transferId?: string;
@@ -44,4 +50,26 @@ export interface TransferResult {
   transferId: string;
   status: "pending" | "complete" | "failed";
   errorMessage?: string;
+}
+
+/**
+ * One recipient's line in one payout run — an immutable ledger row, so a
+ * payee paid every month has one `Payout` per month. Written when a run is
+ * confirmed, then updated in place only to record its terminal status.
+ */
+export interface Payout {
+  id: string;
+  payeeId: string;
+  /** Denormalised for display, so a receipt renders without a second query. */
+  payeeName: string;
+  payeeEmail: string;
+  walletAddress: string;
+  /** True when the payee had claimed their wallet at the time of the run. */
+  claimed: boolean;
+  amountUsdc: number;
+  status: PayeeStatus;
+  transferId?: string;
+  failureReason?: string;
+  createdAt: string;
+  sentAt?: string;
 }

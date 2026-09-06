@@ -1,0 +1,118 @@
+// Arcway — Phase 0/1 schema.
+//
+// The full Phase 1 shape is modelled here in one go so the project migrates
+// once rather than twice (see BUILD_PLAN.md). Auth and company scoping are
+// NOT wired yet: for now every payee hangs off a single default Company row,
+// and the User model is created but unused until Phase 1.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Pooled connection (PgBouncer) — used by the app at runtime.
+  url       = env("DATABASE_URL")
+  // Unpooled connection — Prisma Migrate needs a direct session to take
+  // advisory locks. Against the pooler, migrations hang rather than error.
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  EMPLOYER
+  PAYEE
+}
+
+/// Values are lowercase to map 1:1 onto the `PayeeStatus` union already
+/// declared in lib/types.ts, so no translation layer is needed.
+enum PayeeStatus {
+  pending
+  sending
+  sent
+  failed
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users   User[]
+  payees  Payee[]
+  payouts Payout[]
+}
+
+/// `companyId` is meaningful for EMPLOYERs — it is the company whose dashboard
+/// they administer. Payees are NOT resolved through this column: a payee signs
+/// in with their email and is matched against `Payee` rows, and the same person
+/// may exist as a Payee under several different companies at once. A PAYEE row
+/// here therefore normally carries a null `companyId`.
+model User {
+  id          String   @id @default(cuid())
+  privyUserId String   @unique
+  email       String   @unique
+  companyId   String?
+  role        Role
+  createdAt   DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+}
+
+/// The person: their wallet, their standing amount, and the current queue
+/// state. Mutable. Actual transfers are recorded in `Payout`, not here.
+model Payee {
+  id            String      @id @default(cuid())
+  companyId     String
+  name          String
+  email         String
+  /// Stored as an exact decimal, not a float — this is money. USDC carries 6
+  /// decimals, so Decimal(20, 6) covers the full token precision with room to
+  /// spare. lib/store.ts converts to/from `number` at the boundary so the
+  /// `Payee` type in lib/types.ts and all its callers stay unchanged.
+  amountUsdc    Decimal     @db.Decimal(20, 6)
+  walletAddress String
+  /// Set once the payee has signed in and claimed their embedded wallet.
+  /// Null means unclaimed — the amber "Not yet" state in the dashboard.
+  privyUserId   String?
+  status        PayeeStatus @default(pending)
+  transferId    String?
+  failureReason String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  payouts Payout[]
+
+  // One payee per email per company — Company A and Company B may both pay
+  // the same person, but neither can list them twice.
+  @@unique([companyId, email])
+  @@index([companyId])
+  @@index([status])
+}
+
+/// An immutable ledger of transfers actually attempted. One row per recipient
+/// per payout run, so a payee can be paid many times over — which is what both
+/// the employer's run history and the payee's payment history read from.
+/// Rows are appended and their terminal status set; they are never recycled.
+model Payout {
+  id            String      @id @default(cuid())
+  companyId     String
+  payeeId       String
+  amountUsdc    Decimal     @db.Decimal(20, 6)
+  status        PayeeStatus @default(pending)
+  transferId    String?
+  failureReason String?
+  createdAt     DateTime    @default(now())
+  /// Set when the transfer reaches a settled state, so the receipt can show
+  /// when the money actually landed rather than when the run was started.
+  sentAt        DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  payee   Payee   @relation(fields: [payeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([payeeId])
+  @@index([status])
+}

@@ -64,8 +64,16 @@ import type { TransferResult } from "./types";
  *    console (see https://www.circle.com/arc for the latest network details).
  */
 
+/**
+ * Live mode requires a treasury wallet to send *from*, not just credentials.
+ * An API key with no CIRCLE_TREASURY_WALLET_ID cannot produce a transfer, so
+ * treating that as "configured" would fail every payout against the real API
+ * instead of falling back to the mock path. All three must be present.
+ */
 export const isCircleConfigured = Boolean(
-  process.env.CIRCLE_API_KEY && process.env.CIRCLE_ENTITY_SECRET
+  process.env.CIRCLE_API_KEY &&
+    process.env.CIRCLE_ENTITY_SECRET &&
+    process.env.CIRCLE_TREASURY_WALLET_ID
 );
 
 const CIRCLE_API_BASE = "https://api.circle.com/v1/w3s";
@@ -185,4 +193,33 @@ function hashToUnitInterval(input: string): number {
     hash = (hash * 31 + input.charCodeAt(i)) | 0;
   }
   return (Math.abs(hash) % 1000) / 1000;
+}
+
+/**
+ * The treasury wallet's spendable USDC balance — the figure the dashboard
+ * shows as "Treasury balance" and subtracts a run's total from to preview
+ * the balance after.
+ *
+ * MOCK MODE: returns a fixed, obviously-round sandbox figure. It is labelled
+ * `mocked: true` so the UI can say so rather than implying a funded treasury.
+ *
+ * GOING LIVE: read the wallet's token balances from
+ * GET /v1/w3s/wallets/{id}/balances and pick out the USDC entry.
+ */
+export interface TreasuryBalance {
+  amountUsdc: number;
+  mocked: boolean;
+}
+
+const MOCK_TREASURY_USDC = 25_000;
+
+export async function getTreasuryBalance(): Promise<TreasuryBalance> {
+  if (!isCircleConfigured) {
+    return { amountUsdc: MOCK_TREASURY_USDC, mocked: true };
+  }
+
+  // Live path is wired in Phase 3 alongside the real transfer calls; until
+  // then fall back to the mock figure rather than inventing a number that
+  // looks authoritative.
+  return { amountUsdc: MOCK_TREASURY_USDC, mocked: true };
 }
