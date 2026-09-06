@@ -1,32 +1,32 @@
-import { cn } from "@/lib/utils";
+import { Chip } from "./ui";
 import type { PayeeStatus } from "@/lib/types";
 
-const STYLES: Record<PayeeStatus, string> = {
-  pending: "bg-ink-100 text-ink-600",
-  sending: "bg-amber-100 text-amber-700",
-  sent: "bg-emerald-100 text-emerald-700",
-  failed: "bg-red-100 text-red-700",
-};
-
-const LABELS: Record<PayeeStatus, string> = {
-  pending: "Pending",
-  sending: "Sending…",
-  sent: "Sent",
-  failed: "Failed",
+/**
+ * The employer reads two things off this column: is this person still owed
+ * money, or have they been paid. So `pending` and `failed` both present as
+ * work outstanding (amber) rather than as separate colours — the failure
+ * reason is shown next to the chip, not encoded in it.
+ */
+const PRESENTATION: Record<PayeeStatus, { label: string; tone: "neutral" | "emerald" | "amber" }> = {
+  pending: { label: "Queued", tone: "amber" },
+  sending: { label: "Sending…", tone: "neutral" },
+  sent: { label: "Paid", tone: "emerald" },
+  failed: { label: "Failed", tone: "amber" },
 };
 
 export function StatusBadge({ status }: { status: PayeeStatus }) {
+  const { label, tone } = PRESENTATION[status];
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium",
-        STYLES[status]
-      )}
-    >
+    <Chip tone={tone}>
       {status === "sending" && (
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-chip bg-ink-mute" />
       )}
-      {LABELS[status]}
-    </span>
+      {label}
+    </Chip>
   );
+}
+
+/** Whether a payee still owes a payment — the definition the whole UI shares. */
+export function isQueued(status: PayeeStatus): boolean {
+  return status === "pending" || status === "failed";
 }

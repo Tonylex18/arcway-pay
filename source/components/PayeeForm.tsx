@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { buttonClasses } from "./ui";
 
 export interface PayeeFormValues {
   name: string;
   email: string;
   amountUsdc: number;
 }
+
+const inputClasses =
+  "rounded-btn border border-line bg-card px-3 py-2 text-sm text-ink outline-none " +
+  "placeholder:text-ink-mute focus:border-emerald";
 
 export function PayeeForm({
   onSubmit,
@@ -47,56 +52,64 @@ export function PayeeForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex flex-col gap-4 rounded-xl border border-ink-200 bg-white p-5 shadow-sm sm:flex-row sm:flex-wrap sm:items-end sm:gap-3"
+      className="rounded-card border border-line bg-card p-6"
     >
-      <div className="flex flex-1 flex-col gap-1">
-        <label htmlFor="payee-name" className="text-xs font-medium text-ink-600">
-          Name
-        </label>
-        <input
-          id="payee-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Amara Okafor"
-          className="rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-        />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-3">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <label htmlFor="payee-name" className="text-[13px] font-medium text-ink-soft">
+            Name
+          </label>
+          <input
+            id="payee-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Amara Okafor"
+            className={inputClasses}
+          />
+        </div>
+        <div className="flex flex-1 flex-col gap-1.5">
+          <label htmlFor="payee-email" className="text-[13px] font-medium text-ink-soft">
+            Email
+          </label>
+          <input
+            id="payee-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="amara@example.com"
+            className={inputClasses}
+          />
+        </div>
+        <div className="flex w-full flex-col gap-1.5 sm:w-40">
+          <label htmlFor="payee-amount" className="text-[13px] font-medium text-ink-soft">
+            Amount (USDC)
+          </label>
+          <input
+            id="payee-amount"
+            type="number"
+            min="0"
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="500"
+            className={inputClasses}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={submitting}
+          className={buttonClasses("primary", "md", "sm:w-auto")}
+        >
+          {submitting ? "Adding…" : "Add to next run"}
+        </button>
       </div>
-      <div className="flex flex-1 flex-col gap-1">
-        <label htmlFor="payee-email" className="text-xs font-medium text-ink-600">
-          Email
-        </label>
-        <input
-          id="payee-email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="amara@example.com"
-          className="rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-        />
-      </div>
-      <div className="flex w-full flex-col gap-1 sm:w-36">
-        <label htmlFor="payee-amount" className="text-xs font-medium text-ink-600">
-          Amount (USDC)
-        </label>
-        <input
-          id="payee-amount"
-          type="number"
-          min="0"
-          step="0.01"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder="500"
-          className="rounded-lg border border-ink-200 px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-        />
-      </div>
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-      >
-        {submitting ? "Adding…" : "Add payee"}
-      </button>
-      {error && <p className="w-full text-sm text-red-600">{error}</p>}
+
+      <p className="mt-4 border-t border-line-soft pt-4 text-[13px] leading-[1.6] text-ink-mute">
+        A wallet is created for them the moment you add them. They&rsquo;re not
+        emailed until you send the run.
+      </p>
+
+      {error && <p className="mt-3 text-[13px] text-amber-text">{error}</p>}
     </form>
   );
 }
