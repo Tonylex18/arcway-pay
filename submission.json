@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "slug": "agada-arcway-pay",
+  "track": "general-challenge",
+  "projectName": "Arcway",
+  "capabilityName": "pay_by_email",
+  "team": {
+    "name": "Agada Anthony Alex",
+    "solo": true,
+    "contact": "anthonyagada2000@gmail.com",
+    "github": "https://github.com/Tonylex18"
+  },
+  "description": "Pay a person or business a specified amount of USDC using only their email address. Provisions a Privy embedded wallet for the recipient automatically if they don't have one, then executes the transfer via Circle's Developer-Controlled Wallets / Arc rails.",
+  "capability": {
+    "endpoint": "/api/capability/pay-by-email",
+    "methods": ["GET", "POST"],
+    "inputSchemaRef": "source/app/api/capability/pay-by-email/route.ts",
+    "exampleRequest": {
+      "payeeName": "Ada Lovelace",
+      "payeeEmail": "ada@example.com",
+      "amountUsdc": 50
+    }
+  },
+  "healthCheck": {
+    "path": "/api/health",
+    "note": "Root (/) is the product's human-facing landing page, shared with this project's ETHOnline 2026 submission; the health check is exposed at /api/health instead. See SUBMISSION.md."
+  },
+  "verificationEndpoint": "/.well-known/xagent-verification.json",
+  "deployedUrl": "REPLACE_WITH_VERCEL_DEPLOYMENT_URL",
+  "commit": "REPLACE_WITH_DEPLOYED_COMMIT_SHA",
+  "relatedSubmissions": [
+    {
+      "event": "ETHGlobal ETHOnline 2026",
+      "note": "Same underlying project (Arcway), submitted there as a human-facing dashboard targeting the Privy and Arc sponsor prize tracks."
+    }
+  ],
+  "mockModeAvailable": true,
+  "license": "MIT"
+}

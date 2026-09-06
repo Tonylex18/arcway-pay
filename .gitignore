@@ -1,0 +1,10 @@
+# Repo-root ignores. The Next.js app has its own, more detailed .gitignore
+# in source/, which governs source/ and everything below it.
+
+# macOS
+.DS_Store
+
+# local env files (belt and braces — source/.gitignore covers the app's own)
+.env
+.env.*
+!.env.example
