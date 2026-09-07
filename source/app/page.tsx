@@ -186,9 +186,9 @@ function Hero({
         </a>
       </div>
 
-      <p className="mt-5 text-sm text-ink-mute">
+      {/* <p className="mt-5 text-sm text-ink-mute">
         Sandbox is free. No card required.
-      </p>
+      </p> */}
 
       {/* {sandboxMode && (
         <p className="mt-2 text-[13px] text-ink-mute">
