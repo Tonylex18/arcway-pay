@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { PayeeTable } from "@/components/PayeeTable";
 import type { Payee } from "@/lib/types";
+import { apiFetch } from "@/lib/client-api";
 
 /**
  * The payee directory — everyone on the company's list, regardless of what
@@ -17,7 +18,7 @@ export default function PeoplePage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/payees");
+        const res = await apiFetch("/api/payees");
         const data = await res.json();
         if (!cancelled) setPayees(data.payees ?? []);
       } finally {

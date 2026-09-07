@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { usePrivy } from "@privy-io/react-auth";
 import { Wordmark } from "./Brand";
+import { buttonClasses } from "./ui";
+import { resolveSession } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
 
 const TABS = [
@@ -11,13 +15,6 @@ const TABS = [
   { label: "Activity", href: "/dashboard/activity" },
   { label: "Settings", href: "/dashboard/settings" },
 ];
-
-/**
- * Phase 1 replaces this with the company resolved from the signed-in user's
- * Privy token. Until then every session operates as the single default
- * company created by lib/store.ts.
- */
-const COMPANY_NAME = "Arcway Sandbox";
 
 function initials(name: string): string {
   return name
@@ -29,6 +26,22 @@ function initials(name: string): string {
 
 export function AppChrome() {
   const pathname = usePathname();
+  const { logout } = usePrivy();
+  const [company, setCompany] = useState<string | null>(null);
+
+  // The company shown here is the one the server resolved from the access
+  // token, so the chrome can never label the page with a company the viewer
+  // is not actually acting for.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const session = await resolveSession();
+      if (!cancelled) setCompany(session?.company?.name ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <header className="border-b border-line bg-card">
@@ -38,13 +51,18 @@ export function AppChrome() {
         </Link>
 
         <div className="flex items-center gap-3">
-          <span className="hidden text-sm text-ink-soft sm:inline">{COMPANY_NAME}</span>
+          <span className="hidden text-sm text-ink-soft sm:inline">
+            {company ?? "\u00a0"}
+          </span>
           <span
             aria-hidden="true"
             className="flex h-8 w-8 items-center justify-center rounded-chip border border-emerald-100 bg-emerald-50 text-xs font-semibold text-emerald"
           >
-            {initials(COMPANY_NAME)}
+            {company ? initials(company) : ""}
           </span>
+          <button onClick={() => logout()} className={buttonClasses("quiet", "sm")}>
+            Sign out
+          </button>
         </div>
       </div>
 

@@ -1,19 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authErrorResponse, requireEmployer } from "@/lib/auth";
 import { provisionEmbeddedWallet } from "@/lib/privy";
 import { createPayee, listPayees } from "@/lib/store";
 import type { NewPayeeInput } from "@/lib/types";
 
-// This route reads/writes a local JSON file and must run on the Node.js
-// runtime (not the Edge runtime), and should never be statically cached.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const payees = await listPayees();
-  return NextResponse.json({ payees });
+export async function GET(request: NextRequest) {
+  try {
+    const { company } = await requireEmployer(request);
+    return NextResponse.json({ payees: await listPayees(company.id) });
+  } catch (err) {
+    const res = authErrorResponse(err);
+    if (res) return res;
+    console.error("Failed to list payees:", err);
+    return NextResponse.json({ error: "Could not load payees." }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
+  let company;
+  try {
+    ({ company } = await requireEmployer(request));
+  } catch (err) {
+    const res = authErrorResponse(err);
+    if (res) return res;
+    throw err;
+  }
+
   let body: Partial<NewPayeeInput>;
   try {
     body = await request.json();
@@ -43,7 +58,7 @@ export async function POST(request: NextRequest) {
     // added — this is what lets us send them USDC before they've ever
     // opened the app or installed a wallet.
     const wallet = await provisionEmbeddedWallet(email);
-    const payee = await createPayee({ name, email, amountUsdc }, wallet.address);
+    const payee = await createPayee(company.id, { name, email, amountUsdc }, wallet.address);
     return NextResponse.json({ payee, walletMocked: wallet.mocked }, { status: 201 });
   } catch (err) {
     console.error("Failed to create payee:", err);

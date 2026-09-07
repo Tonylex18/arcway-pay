@@ -6,6 +6,7 @@ import { isQueued } from "@/components/StatusBadge";
 import { buttonClasses, Chip, Eyebrow } from "@/components/ui";
 import type { Payee, Payout } from "@/lib/types";
 import { cn, formatUsdc, truncateAddress } from "@/lib/utils";
+import { apiFetch } from "@/lib/client-api";
 
 /**
  * The confirmation gate.
@@ -27,8 +28,8 @@ export default function ReviewPage() {
 
   const load = useCallback(async () => {
     const [payeeRes, treasuryRes] = await Promise.all([
-      fetch("/api/payees"),
-      fetch("/api/treasury"),
+      apiFetch("/api/payees"),
+      apiFetch("/api/treasury"),
     ]);
     const data = await payeeRes.json();
     setPayees((data.payees ?? []).filter((p: Payee) => isQueued(p.status)));
@@ -74,9 +75,8 @@ export default function ReviewPage() {
     setSending(true);
     setError(null);
     try {
-      const res = await fetch("/api/payouts", {
+      const res = await apiFetch("/api/payouts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ payeeIds: included.map((p) => p.id) }),
       });
       const data = await res.json();

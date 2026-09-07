@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Chip, Eyebrow } from "@/components/ui";
+import { apiFetch, resolveSession } from "@/lib/client-api";
 
 /**
  * Shows which integrations are actually live. Deliberately reports mock mode
@@ -10,12 +11,15 @@ import { Chip, Eyebrow } from "@/components/ui";
  */
 export default function SettingsPage() {
   const [treasury, setTreasury] = useState<{ amountUsdc: number; mocked: boolean } | null>(null);
+  const [company, setCompany] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await fetch("/api/treasury");
-      if (!cancelled) setTreasury(await res.json());
+      const [res, session] = await Promise.all([apiFetch("/api/treasury"), resolveSession()]);
+      if (cancelled) return;
+      setTreasury(await res.json());
+      setCompany(session?.company?.name ?? null);
     })();
     return () => {
       cancelled = true;
@@ -32,7 +36,7 @@ export default function SettingsPage() {
 
       <div className="mt-8 overflow-hidden rounded-card border border-line bg-card">
         <Row label="Company">
-          <span className="text-ink">Arcway Sandbox</span>
+          <span className="text-ink">{company ?? "—"}</span>
         </Row>
         <Row label="USDC settlement">
           <Chip tone={circleMocked ? "amber" : "emerald"}>
@@ -45,9 +49,8 @@ export default function SettingsPage() {
       </div>
 
       <p className="mt-6 max-w-xl text-[13px] leading-[1.6] text-ink-mute">
-        Company details, team access, and API keys arrive with authentication
-        in the next phase. Until then every session operates as a single
-        sandbox company.
+        Team access and agent API keys arrive in a later phase. Your payee and
+        payout data is already isolated to this company.
       </p>
     </div>
   );

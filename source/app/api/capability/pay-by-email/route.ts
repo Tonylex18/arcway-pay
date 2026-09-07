@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/privy";
-import { createTransfer, getTransferStatus } from "@/lib/circle";
+import { createTransfer, getTransferStatus, isCircleConfigured } from "@/lib/circle";
 import { createPayee, listPayees, updatePayeeStatus } from "@/lib/store";
+import { prisma } from "@/lib/prisma";
 
 /**
  * pay-by-email — the agent-callable capability this hackathon submission
@@ -27,6 +28,8 @@ import { createPayee, listPayees, updatePayeeStatus } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const SANDBOX_COMPANY_ID = "agent-sandbox";
 
 const SCHEMA = {
   name: "pay_by_email",
@@ -63,6 +66,21 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  // PHASE 4 GETS API-KEY AUTH. Until it does, this endpoint is unauthenticated,
+  // so it must never be able to move real money. It runs only while Circle is
+  // in mock mode; the moment live credentials (including a treasury wallet)
+  // are present, it refuses rather than spending them for an anonymous caller.
+  if (isCircleConfigured) {
+    return NextResponse.json(
+      {
+        status: "failed",
+        errorMessage:
+          "This capability is disabled while live Circle credentials are configured. Agent API keys arrive in Phase 4; until then it runs in mock mode only.",
+      },
+      { status: 503 }
+    );
+  }
+
   let body: { payeeName?: unknown; payeeEmail?: unknown; amountUsdc?: unknown };
   try {
     body = await request.json();
@@ -89,16 +107,31 @@ export async function POST(request: NextRequest) {
     //    required from them.
     const wallet = await provisionEmbeddedWallet(payeeEmail);
 
+    // The store is company-scoped, but an anonymous agent call has no session
+    // to resolve one from. Phase 4 replaces this with the company that owns
+    // the presented API key; in mock mode everything lands in one clearly
+    // labelled sandbox company that no real employer can sign in to, so
+    // agent traffic can never touch a tenant's books.
+    const company = await prisma.company.upsert({
+      where: { id: SANDBOX_COMPANY_ID },
+      update: {},
+      create: { id: SANDBOX_COMPANY_ID, name: "Agent Sandbox (mock mode)" },
+    });
+
     // 2. Record the payee so this call shows up in the dashboard too,
     //    keeping both submission entry points backed by one shared system.
-    const existing = (await listPayees()).find(
+    const existing = (await listPayees(company.id)).find(
       (p) => p.email.toLowerCase() === payeeEmail.toLowerCase()
     );
     const payee = existing
       ? existing
-      : await createPayee({ name: payeeName, email: payeeEmail, amountUsdc }, wallet.address);
+      : await createPayee(
+          company.id,
+          { name: payeeName, email: payeeEmail, amountUsdc },
+          wallet.address
+        );
 
-    await updatePayeeStatus(payee.id, "sending");
+    await updatePayeeStatus(company.id, payee.id, "sending");
 
     // 3. Execute the USDC transfer via Circle (Arc), then resolve its final
     //    state before responding, so a caller gets a definitive answer in
@@ -109,7 +142,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (created.status === "failed") {
-      await updatePayeeStatus(payee.id, "failed", {
+      await updatePayeeStatus(company.id, payee.id, "failed", {
         failureReason: created.errorMessage ?? "Transfer creation failed.",
       });
       return NextResponse.json(
@@ -126,7 +159,7 @@ export async function POST(request: NextRequest) {
     const final = await getTransferStatus(created.transferId);
     const status = final.status === "complete" ? "sent" : final.status === "failed" ? "failed" : "pending";
 
-    await updatePayeeStatus(payee.id, status === "sent" ? "sent" : status === "failed" ? "failed" : "sending", {
+    await updatePayeeStatus(company.id, payee.id, status === "sent" ? "sent" : status === "failed" ? "failed" : "sending", {
       transferId: created.transferId,
       failureReason: final.errorMessage,
     });

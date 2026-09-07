@@ -16,29 +16,14 @@ import type { NewPayeeInput, Payee, PayeeStatus, Payout } from "./types";
  *   - `DateTime` -> ISO-8601 `string`, which is what the client components
  *     already expect.
  *
- * COMPANY SCOPING IS NOT WIRED YET. Every read and write goes through a single
- * default Company row (see `getDefaultCompanyId`). Phase 1 replaces that call
- * with the authenticated user's company; because every query below already
- * filters on `companyId`, that is a one-line change per function rather than a
- * rewrite.
+ * COMPANY SCOPING: every function here takes an explicit `companyId` and
+ * filters on it. There is no ambient "current company" — callers must pass the
+ * company resolved from the request's verified access token (lib/auth.ts), so
+ * a route physically cannot read another tenant's rows by forgetting a filter.
+ *
+ * Update and delete paths scope by `{ id, companyId }` rather than `{ id }`
+ * alone: knowing another company's payee id must not be enough to write to it.
  */
-
-const DEFAULT_COMPANY_ID = "default-company";
-const DEFAULT_COMPANY_NAME = "Arcway Sandbox";
-
-/**
- * Resolves the company that unauthenticated requests operate as, creating it
- * on first use. Phase 1 replaces callers of this with the company resolved
- * from the request's Privy token.
- */
-export async function getDefaultCompanyId(): Promise<string> {
-  await prisma.company.upsert({
-    where: { id: DEFAULT_COMPANY_ID },
-    update: {},
-    create: { id: DEFAULT_COMPANY_ID, name: DEFAULT_COMPANY_NAME },
-  });
-  return DEFAULT_COMPANY_ID;
-}
 
 type PayeeRow = Prisma.PayeeGetPayload<Record<string, never>>;
 type PayoutRow = Prisma.PayoutGetPayload<{ include: { payee: true } }>;
@@ -76,8 +61,7 @@ function toPayout(row: PayoutRow): Payout {
   };
 }
 
-export async function listPayees(): Promise<Payee[]> {
-  const companyId = await getDefaultCompanyId();
+export async function listPayees(companyId: string): Promise<Payee[]> {
   const rows = await prisma.payee.findMany({
     where: { companyId },
     // Newest first, so a freshly-added payee shows up at the top of the table.
@@ -96,10 +80,10 @@ export async function listPayees(): Promise<Payee[]> {
  * do. Their wallet address is never reassigned once provisioned.
  */
 export async function createPayee(
+  companyId: string,
   input: NewPayeeInput,
   walletAddress: string
 ): Promise<Payee> {
-  const companyId = await getDefaultCompanyId();
   const email = input.email.trim().toLowerCase();
 
   const row = await prisma.payee.upsert({
@@ -122,13 +106,15 @@ export async function createPayee(
 }
 
 export async function updatePayeeStatus(
+  companyId: string,
   id: string,
   status: PayeeStatus,
   extra: Partial<Pick<Payee, "transferId" | "failureReason">> = {}
 ): Promise<Payee | null> {
   try {
     const row = await prisma.payee.update({
-      where: { id },
+      // Scoped by company: an id alone must not grant write access.
+      where: { id, companyId },
       data: {
         status,
         ...(extra.transferId !== undefined ? { transferId: extra.transferId } : {}),
@@ -146,8 +132,8 @@ export async function updatePayeeStatus(
   }
 }
 
-export async function getPayee(id: string): Promise<Payee | null> {
-  const row = await prisma.payee.findUnique({ where: { id } });
+export async function getPayee(companyId: string, id: string): Promise<Payee | null> {
+  const row = await prisma.payee.findFirst({ where: { id, companyId } });
   return row ? toPayee(row) : null;
 }
 
@@ -159,10 +145,10 @@ export async function getPayee(id: string): Promise<Payee | null> {
  * crash mid-run still leaves a record of what was intended.
  */
 export async function createPayout(
+  companyId: string,
   payeeId: string,
   amountUsdc: number
 ): Promise<Payout> {
-  const companyId = await getDefaultCompanyId();
   const row = await prisma.payout.create({
     data: {
       companyId,
@@ -176,13 +162,14 @@ export async function createPayout(
 }
 
 export async function updatePayoutStatus(
+  companyId: string,
   id: string,
   status: PayeeStatus,
   extra: { transferId?: string; failureReason?: string } = {}
 ): Promise<Payout | null> {
   try {
     const row = await prisma.payout.update({
-      where: { id },
+      where: { id, companyId },
       data: {
         status,
         ...(extra.transferId !== undefined ? { transferId: extra.transferId } : {}),
@@ -203,8 +190,7 @@ export async function updatePayoutStatus(
 }
 
 /** Every payout ever recorded for this company, newest first. */
-export async function listPayouts(limit = 100): Promise<Payout[]> {
-  const companyId = await getDefaultCompanyId();
+export async function listPayouts(companyId: string, limit = 100): Promise<Payout[]> {
   const rows = await prisma.payout.findMany({
     where: { companyId },
     include: { payee: true },
@@ -215,10 +201,10 @@ export async function listPayouts(limit = 100): Promise<Payout[]> {
 }
 
 /** The payouts written by one run, identified by the ids returned when it ran. */
-export async function listPayoutsByIds(ids: string[]): Promise<Payout[]> {
+export async function listPayoutsByIds(companyId: string, ids: string[]): Promise<Payout[]> {
   if (ids.length === 0) return [];
   const rows = await prisma.payout.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, companyId },
     include: { payee: true },
     orderBy: { createdAt: "asc" },
   });

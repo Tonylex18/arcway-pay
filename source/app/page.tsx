@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Wordmark } from "@/components/Brand";
 import { buttonClasses } from "@/components/ui";
+import { resolveSession } from "@/lib/client-api";
 import { isPrivyClientConfigured } from "./providers";
 
 export default function LandingPage() {
@@ -20,10 +21,20 @@ function LandingWithAuth() {
   const { ready, authenticated, login } = usePrivy();
   const router = useRouter();
 
+  // Where a signed-in person goes is decided by the server from their stored
+  // records and verified email — NOT by which button they pressed. A
+  // contractor who clicks "Start paying" still lands on /claim.
   useEffect(() => {
-    if (ready && authenticated) {
-      router.push("/dashboard");
-    }
+    if (!ready || !authenticated) return;
+    let cancelled = false;
+    (async () => {
+      const session = await resolveSession();
+      if (cancelled) return;
+      router.replace(session?.destination ?? "/dashboard");
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [ready, authenticated, router]);
 
   return <LandingContent onSignIn={() => login()} signInReady={ready} />;
@@ -150,7 +161,7 @@ function Hero({
         <em className="italic text-emerald">five days.</em>
       </h1>
 
-      <p className="mt-7 max-w-[620px] text-[17px] leading-[1.6] text-ink-soft sm:text-xl">
+      <p className="mt-7 max-w-155 text-[17px] leading-[1.6] text-ink-soft sm:text-xl">
         Arcway pays your contractors and remote staff in USDC using nothing but
         their email address. No wallets to collect, no correspondent banks, no
         waiting on a Friday cut-off.
@@ -263,7 +274,7 @@ function TwoSides() {
         <h2 className="font-display text-[36px] leading-tight tracking-[-0.01em] text-ink sm:text-[44px]">
           One payment, two sides.
         </h2>
-        <p className="mt-4 max-w-[620px] text-[17px] leading-[1.6] text-ink-soft">
+        <p className="mt-4 max-w-155 text-[17px] leading-[1.6] text-ink-soft">
           Finance runs the payroll. The person getting paid does almost nothing.
         </p>
 
@@ -300,7 +311,7 @@ function CheckMark() {
       viewBox="0 0 16 16"
       fill="none"
       aria-hidden="true"
-      className="mt-[3px] h-4 w-4 shrink-0 text-emerald"
+      className="mt-0.75 h-4 w-4 shrink-0 text-emerald"
     >
       <path
         d="M3 8.5 6.25 11.75 13 5"
@@ -374,7 +385,7 @@ function ClosingBand({
           Send your first payment{" "}
           <em className="italic text-emerald-bright">this afternoon.</em>
         </h2>
-        <p className="mx-auto mt-5 max-w-[560px] text-[17px] leading-[1.6] text-balance text-line">
+        <p className="mx-auto mt-5 max-w-140 text-[17px] leading-[1.6] text-balance text-line">
           Set up a sandbox account, add one payee, and watch it land. Nothing to
           install.
         </p>

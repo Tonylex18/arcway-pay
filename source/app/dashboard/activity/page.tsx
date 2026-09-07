@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Chip, Eyebrow } from "@/components/ui";
 import type { Payout } from "@/lib/types";
 import { formatUsdc, truncateAddress } from "@/lib/utils";
+import { apiFetch } from "@/lib/client-api";
 
 /** Every transfer ever attempted, read straight off the Payout ledger. */
 export default function ActivityPage() {
@@ -15,7 +16,7 @@ export default function ActivityPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/payouts");
+        const res = await apiFetch("/api/payouts");
         const data = await res.json();
         if (!cancelled) setPayouts(data.payouts ?? []);
       } finally {

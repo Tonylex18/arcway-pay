@@ -8,6 +8,7 @@ import { isQueued } from "@/components/StatusBadge";
 import { buttonClasses, Eyebrow } from "@/components/ui";
 import type { Payee } from "@/lib/types";
 import { cn, formatUsdc } from "@/lib/utils";
+import { apiFetch } from "@/lib/client-api";
 
 type Filter = "all" | "queued" | "paid";
 
@@ -30,8 +31,8 @@ export default function PayoutsPage() {
 
   const refresh = useCallback(async () => {
     const [payeeRes, treasuryRes] = await Promise.all([
-      fetch("/api/payees"),
-      fetch("/api/treasury"),
+      apiFetch("/api/payees"),
+      apiFetch("/api/treasury"),
     ]);
     const payeeData = await payeeRes.json();
     setPayees(payeeData.payees ?? []);
@@ -68,9 +69,8 @@ export default function PayoutsPage() {
     setAdding(true);
     setNotice(null);
     try {
-      const res = await fetch("/api/payees", {
+      const res = await apiFetch("/api/payees", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
       const data = await res.json();
@@ -115,9 +115,8 @@ export default function PayoutsPage() {
           failures.push(email || name || "(blank row)");
           continue;
         }
-        const res = await fetch("/api/payees", {
+        const res = await apiFetch("/api/payees", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, email, amountUsdc }),
         });
         if (res.ok) added += 1;
