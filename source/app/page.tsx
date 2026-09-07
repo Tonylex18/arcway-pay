@@ -190,13 +190,13 @@ function Hero({
         Sandbox is free. No card required.
       </p>
 
-      {sandboxMode && (
+      {/* {sandboxMode && (
         <p className="mt-2 text-[13px] text-ink-mute">
           Running in sandbox mode — set{" "}
           <code className="font-mono text-[12px]">NEXT_PUBLIC_PRIVY_APP_ID</code>{" "}
           to enable email sign-in.
         </p>
-      )}
+      )} */}
     </section>
   );
 }
