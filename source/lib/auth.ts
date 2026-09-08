@@ -126,14 +126,20 @@ export interface EmployerContext {
 }
 
 /**
- * The guard for every employer data route. Guarantees a company, so callers
- * can scope their queries without a null check.
+ * The guard for every employer data route.
+ *
+ * ACCESS IS GRANTED BY CAPABILITY, NOT BY ROLE. Having a company is what makes
+ * someone an employer here; `User.role` only decides where sign-in sends them
+ * by default. Checking the role as well would lock out anyone whose role field
+ * disagrees with their actual relationships — and those two drift apart easily,
+ * because a role is assigned once at first sign-in while relationships keep
+ * changing afterwards.
  */
 export async function requireEmployer(request: Request): Promise<EmployerContext> {
   const { user, company } = await requireAuth(request);
 
-  if (user.role !== "EMPLOYER" || !company) {
-    throw new AuthError("This account cannot access company payouts.", 403);
+  if (!company) {
+    throw new AuthError("This account isn't set up with a company yet.", 403);
   }
 
   return { user, company };
@@ -145,4 +151,66 @@ export function authErrorResponse(err: unknown): Response | null {
     return Response.json({ error: err.message }, { status: err.status });
   }
   return null;
+}
+
+export interface PayeeContext {
+  user: User;
+  privyUserId: string;
+  /** Always present: a payee is resolved by email as well as by Privy id. */
+  email: string;
+}
+
+/**
+ * The guard for every /api/claim/* route.
+ *
+ * Scoped to the PERSON, not to a company — the mirror image of
+ * `requireEmployer`. It returns the identity that person-scoped store queries
+ * union across companies with, so a contractor paid by two clients sees both.
+ *
+ * ACCESS IS GRANTED BY HAVING PAYEE ROWS, NOT BY ROLE. An earlier version
+ * refused anyone whose `User.role` was not PAYEE, which locked real people out
+ * of their own money: `/api/session` assigns EMPLOYER to any email that signs
+ * in before it appears on a payroll, so a contractor who visited the site once
+ * out of curiosity could never claim afterwards. Somebody can legitimately run
+ * a company AND be paid by another one; both surfaces must stay open to them.
+ */
+export async function requirePayee(request: Request): Promise<PayeeContext> {
+  const { user, email } = await requireAuth(request);
+
+  // `user.email` is the address stored at claim time; the token's current
+  // email is a fallback for accounts whose profile call failed.
+  const resolved = (user.email ?? email)?.toLowerCase();
+  if (!resolved) {
+    throw new AuthError("This account has no email address linked.", 403);
+  }
+
+  const paid = await prisma.payee.findFirst({
+    where: { OR: [{ privyUserId: user.privyUserId }, { email: resolved }] },
+    select: { id: true },
+  });
+
+  if (!paid) {
+    throw new AuthError("No payments have been sent to this email address.", 403);
+  }
+
+  return { user, privyUserId: user.privyUserId, email: resolved };
+}
+
+/**
+ * What this identity may reach, derived from relationships rather than role.
+ * Used by /api/session so the client can route without guessing.
+ */
+export async function resolveCapabilities(
+  privyUserId: string,
+  email: string | null
+): Promise<{ canUseDashboard: boolean; canUseClaim: boolean }> {
+  const clauses: { privyUserId?: string; email?: string }[] = [{ privyUserId }];
+  if (email) clauses.push({ email: email.toLowerCase() });
+
+  const [user, paid] = await Promise.all([
+    prisma.user.findUnique({ where: { privyUserId }, select: { companyId: true } }),
+    prisma.payee.findFirst({ where: { OR: clauses }, select: { id: true } }),
+  ]);
+
+  return { canUseDashboard: Boolean(user?.companyId), canUseClaim: Boolean(paid) };
 }

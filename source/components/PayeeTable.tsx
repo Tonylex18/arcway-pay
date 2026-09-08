@@ -5,9 +5,12 @@ import { StatusBadge } from "./StatusBadge";
 export function PayeeTable({
   payees,
   emptyMessage = "No payees yet. Add your first payee to provision them a wallet.",
+  renderAction,
 }: {
   payees: Payee[];
   emptyMessage?: string;
+  /** Optional per-row action, e.g. "Pay again". Column is hidden when absent. */
+  renderAction?: (payee: Payee) => React.ReactNode;
 }) {
   if (payees.length === 0) {
     return (
@@ -28,6 +31,7 @@ export function PayeeTable({
               <th className="px-5 py-3 text-right font-semibold">Amount</th>
               <th className="px-5 py-3 font-semibold">Status</th>
               <th className="px-5 py-3 font-semibold">Claimed</th>
+              {renderAction && <th className="px-5 py-3" />}
             </tr>
           </thead>
           <tbody>
@@ -59,6 +63,9 @@ export function PayeeTable({
                     <span className="text-amber-text">Not yet</span>
                   )}
                 </td>
+                {renderAction && (
+                  <td className="px-5 py-4 text-right">{renderAction(payee)}</td>
+                )}
               </tr>
             ))}
           </tbody>

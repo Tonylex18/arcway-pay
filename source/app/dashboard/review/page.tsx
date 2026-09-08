@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isQueued } from "@/components/StatusBadge";
+import { RunReceipt } from "@/components/RunReceipt";
 import { buttonClasses, Chip, Eyebrow } from "@/components/ui";
 import type { Payee, Payout } from "@/lib/types";
 import { cn, formatUsdc, truncateAddress } from "@/lib/utils";
@@ -89,7 +90,13 @@ export default function ReviewPage() {
     }
   }
 
-  if (receipt) return <Receipt payouts={receipt} />;
+  if (receipt) {
+    return (
+      <div className="mx-auto max-w-4xl px-6 py-10">
+        <RunReceipt payouts={receipt} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -269,100 +276,6 @@ function Figure({
         {value}
       </div>
       {note && <div className="mt-2 text-[13px] text-amber-text">{note}</div>}
-    </div>
-  );
-}
-
-/* --------------------------------------------------------- receipt --- */
-
-/**
- * Settlement and claim state are two different things, and a row can fail at
- * either. A transfer that never left is "Failed"; one that landed in a wallet
- * nobody has signed into yet is "Unclaimed" — the money is theirs, waiting.
- * Only a landed transfer into a claimed wallet is fully "Settled".
- */
-function ReceiptChip({ payout }: { payout: Payout }) {
-  if (payout.status === "failed") return <Chip tone="amber">Failed</Chip>;
-  if (payout.status !== "sent") return <Chip tone="neutral">Pending</Chip>;
-  return payout.claimed ? (
-    <Chip tone="emerald">Settled</Chip>
-  ) : (
-    <Chip tone="amber">Unclaimed</Chip>
-  );
-}
-
-function Receipt({ payouts }: { payouts: Payout[] }) {
-  const settled = payouts.filter((p) => p.status === "sent");
-
-  function downloadReceipt() {
-    const header = "name,email,wallet,amount_usdc,status,transaction_hash,sent_at";
-    const rows = payouts.map((p) =>
-      [
-        p.payeeName,
-        p.payeeEmail,
-        p.walletAddress,
-        p.amountUsdc.toFixed(2),
-        p.status,
-        p.transferId ?? "",
-        p.sentAt ?? "",
-      ]
-        .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
-        .join(",")
-    );
-    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `arcway-receipt-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const total = payouts.reduce((sum, p) => sum + p.amountUsdc, 0);
-
-  return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
-      <h1 className="font-display text-[40px] leading-none tracking-[-0.01em] text-ink">
-        {settled.length} payment{settled.length === 1 ? "" : "s"} sent
-      </h1>
-      <p className="mt-3 text-[15px] text-ink-soft">
-        {formatUsdc(total)} USDC across {payouts.length} recipient
-        {payouts.length === 1 ? "" : "s"}. Every line has a receipt.
-      </p>
-
-      <div className="mt-8 overflow-hidden rounded-card border border-line bg-card">
-        <ul>
-          {payouts.map((p) => (
-            <li
-              key={p.id}
-              className="flex flex-wrap items-center justify-between gap-4 border-b border-line-soft px-5 py-4 last:border-0"
-            >
-              <div className="min-w-0">
-                <div className="font-medium text-ink">{p.payeeName}</div>
-                <div className="text-[13px] text-ink-mute">{p.payeeEmail}</div>
-                <div className="mt-1 font-mono text-[12px] text-ink-mute">
-                  {p.transferId ? truncateAddress(p.transferId, 6) : "No transaction hash"}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-4">
-                <ReceiptChip payout={p} />
-                <div className="text-right font-medium text-ink">
-                  {formatUsdc(p.amountUsdc)} <span className="text-ink-mute">USDC</span>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="mt-8 flex flex-wrap gap-3">
-        <button onClick={downloadReceipt} className={buttonClasses("primary", "lg")}>
-          Download receipt
-        </button>
-        <Link href="/dashboard" className={buttonClasses("secondary", "lg")}>
-          Back to payouts
-        </Link>
-      </div>
     </div>
   );
 }

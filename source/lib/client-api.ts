@@ -30,6 +30,11 @@ export interface SessionInfo {
   role: "EMPLOYER" | "PAYEE" | null;
   email: string | null;
   company: { id: string; name: string } | null;
+  /** Has a company — what actually grants the dashboard. */
+  canUseDashboard: boolean;
+  /** Has been paid by someone — what actually grants /claim. */
+  canUseClaim: boolean;
+  /** Where to land by default. Never a restriction on the other surface. */
   destination: string;
 }
 

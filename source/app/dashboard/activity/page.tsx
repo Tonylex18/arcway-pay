@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Chip, Eyebrow } from "@/components/ui";
@@ -35,7 +36,8 @@ export default function ActivityPage() {
       </h1>
       <p className="mt-3 max-w-xl text-[15px] leading-[1.6] text-ink-soft">
         One row per recipient per run. These rows are never rewritten, so a
-        person paid every month appears here every month.
+        person paid every month appears here every month. Open any row to
+        reopen that run&rsquo;s receipt.
       </p>
 
       <div className="mt-8">
@@ -59,7 +61,12 @@ export default function ActivityPage() {
                   className="flex flex-wrap items-center justify-between gap-4 border-b border-line-soft px-5 py-4 last:border-0"
                 >
                   <div className="min-w-0">
-                    <div className="font-medium text-ink">{p.payeeName}</div>
+                    <Link
+                      href={`/dashboard/runs/${p.runId}`}
+                      className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-emerald"
+                    >
+                      {p.payeeName}
+                    </Link>
                     <div className="text-[13px] text-ink-mute">{p.payeeEmail}</div>
                     <div className="mt-1 font-mono text-[12px] text-ink-mute">
                       {p.transferId ? truncateAddress(p.transferId, 6) : "—"}

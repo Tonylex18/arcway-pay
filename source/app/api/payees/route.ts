@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authErrorResponse, requireEmployer } from "@/lib/auth";
 import { provisionEmbeddedWallet } from "@/lib/privy";
-import { createPayee, listPayees } from "@/lib/store";
+import { createPayee, findPayeeByEmail, listPayees, requeuePayee } from "@/lib/store";
 import type { NewPayeeInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -54,12 +54,24 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Somebody already on this payroll is a repeat payment, not a new person:
+    // reuse their row and wallet rather than erroring on the unique key or
+    // making a pointless Privy call to re-provision a wallet they already have.
+    const existing = await findPayeeByEmail(company.id, email);
+    if (existing) {
+      const payee = await requeuePayee(company.id, existing.id, amountUsdc);
+      return NextResponse.json(
+        { payee, requeued: true, walletMocked: false },
+        { status: 200 }
+      );
+    }
+
     // Provision the payee's embedded wallet via Privy the moment they're
     // added — this is what lets us send them USDC before they've ever
     // opened the app or installed a wallet.
     const wallet = await provisionEmbeddedWallet(email);
     const payee = await createPayee(company.id, { name, email, amountUsdc }, wallet.address);
-    return NextResponse.json({ payee, walletMocked: wallet.mocked }, { status: 201 });
+    return NextResponse.json({ payee, requeued: false, walletMocked: wallet.mocked }, { status: 201 });
   } catch (err) {
     console.error("Failed to create payee:", err);
     return NextResponse.json(

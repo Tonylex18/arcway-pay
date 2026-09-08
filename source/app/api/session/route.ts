@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { AuthError, authErrorResponse, verifyIdentity } from "@/lib/auth";
+import {
+  AuthError,
+  authErrorResponse,
+  resolveCapabilities,
+  verifyIdentity,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -31,14 +36,34 @@ export async function GET(request: Request) {
     });
 
     if (existing) {
+      const caps = await resolveCapabilities(privyUserId, existing.email);
+
+      // Role picks the DEFAULT landing place; capabilities decide what is
+      // reachable. Someone who runs a company and is also paid by another one
+      // gets a default, not a restriction. An employer who never finished
+      // naming their company still needs the welcome screen.
+      const destination = !caps.canUseDashboard && caps.canUseClaim
+        ? "/claim"
+        : existing.role === "EMPLOYER"
+          ? caps.canUseDashboard
+            ? "/dashboard"
+            : "/dashboard/welcome"
+          : "/claim";
+
       return NextResponse.json({
-        status: existing.role === "EMPLOYER" ? "employer" : "payee",
+        status: caps.canUseDashboard
+          ? "employer"
+          : caps.canUseClaim
+            ? "payee"
+            : "needs-company",
         role: existing.role,
         email: existing.email,
         company: existing.company
           ? { id: existing.company.id, name: existing.company.name }
           : null,
-        destination: existing.role === "EMPLOYER" ? "/dashboard" : "/claim",
+        canUseDashboard: caps.canUseDashboard,
+        canUseClaim: caps.canUseClaim,
+        destination,
       });
     }
 
@@ -65,6 +90,8 @@ export async function GET(request: Request) {
         role: user.role,
         email: user.email,
         company: null,
+        canUseDashboard: false,
+        canUseClaim: true,
         destination: "/claim",
       });
     }
@@ -75,6 +102,8 @@ export async function GET(request: Request) {
       role: null,
       email,
       company: null,
+      canUseDashboard: false,
+      canUseClaim: false,
       destination: "/dashboard/welcome",
     });
   } catch (err) {

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import { useSession } from "@/components/SessionContext";
 import { buttonClasses } from "@/components/ui";
 import { apiFetch } from "@/lib/client-api";
 
@@ -12,6 +13,7 @@ import { apiFetch } from "@/lib/client-api";
  */
 export default function WelcomePage() {
   const router = useRouter();
+  const { refresh } = useSession();
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +34,19 @@ export default function WelcomePage() {
         body: JSON.stringify({ name: name.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not create your company.");
-      router.replace("/dashboard");
+
+      // A 409 means this identity already completed onboarding — which is a
+      // success from the user's point of view, not an error. Refreshing the
+      // session below resolves them to their existing company.
+      if (!res.ok && res.status !== 409) {
+        throw new Error(data.error ?? "Could not create your company.");
+      }
+
+      // Re-read the session BEFORE navigating. The dashboard layout wraps this
+      // route, so it will not remount on navigation — without this the gate
+      // still believes we need a company and sends us straight back here.
+      const next = await refresh();
+      router.replace(next?.destination ?? "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create your company.");
       setSubmitting(false);

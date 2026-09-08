@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PayeeForm, type PayeeFormValues } from "@/components/PayeeForm";
+import { PayAgain } from "@/components/PayAgain";
 import { PayeeTable } from "@/components/PayeeTable";
 import { isQueued } from "@/components/StatusBadge";
 import { buttonClasses, Eyebrow } from "@/components/ui";
@@ -78,7 +79,9 @@ export default function PayoutsPage() {
       await refresh();
       setNotice({
         kind: "info",
-        text: `${values.name} added to the next run. A wallet is waiting for them.`,
+        text: data.requeued
+          ? `${values.name} is already on your list — queued another ${formatUsdc(values.amountUsdc)} USDC for them.`
+          : `${values.name} added to the next run. A wallet is waiting for them.`,
       });
     } finally {
       setAdding(false);
@@ -245,6 +248,16 @@ export default function PayoutsPage() {
         ) : (
           <PayeeTable
             payees={visible}
+            renderAction={(payee) => (
+              <PayAgain
+                payee={payee}
+                onQueued={(updated) =>
+                  setPayees((prev) =>
+                    prev.map((p) => (p.id === updated.id ? updated : p))
+                  )
+                }
+              />
+            )}
             emptyMessage={
               filter === "all"
                 ? "No payees yet. Add your first payee to provision them a wallet."

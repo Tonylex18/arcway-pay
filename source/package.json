@@ -9,9 +9,12 @@
     "start": "next start",
     "lint": "eslint .",
     "db:generate": "node scripts/with-env.mjs prisma generate",
-    "db:migrate": "node scripts/with-env.mjs prisma migrate dev",
-    "db:deploy": "node scripts/with-env.mjs prisma migrate deploy",
-    "db:studio": "node scripts/with-env.mjs prisma studio"
+    "db:migrate": "node scripts/with-env.mjs node scripts/migrate-dev.mjs",
+    "db:deploy": "node scripts/with-env.mjs node scripts/migrate-deploy.mjs",
+    "db:studio": "node scripts/with-env.mjs prisma studio",
+    "db:clean": "node scripts/with-env.mjs node scripts/db-clean.mjs",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma generate && node scripts/migrate-deploy.mjs && next build"
   },
   "keywords": [],
   "author": "",

@@ -2,9 +2,9 @@
 
 import { usePrivy } from "@privy-io/react-auth";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { AppChrome } from "@/components/AppChrome";
-import { resolveSession, type SessionInfo } from "@/lib/client-api";
+import { SessionProvider, useSession } from "@/components/SessionContext";
 import { isPrivyClientConfigured } from "../providers";
 
 /**
@@ -13,17 +13,19 @@ import { isPrivyClientConfigured } from "../providers";
  * Unauthenticated visitors are sent to "/" rather than shown a sign-in prompt
  * here — the landing page owns login, and routing after login is decided by
  * identity. A signed-in identity that is a payee, or an employer who has not
- * yet named their company, is redirected to where it actually belongs rather
- * than being shown an empty dashboard.
+ * yet named their company, is redirected to where it actually belongs.
  */
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  if (!isPrivyClientConfigured) return <NotConfigured />;
   return (
-    <AuthGate>
-      <div className="flex min-h-screen flex-col">
-        <AppChrome />
-        <main className="flex-1">{children}</main>
-      </div>
-    </AuthGate>
+    <SessionProvider>
+      <AuthGate>
+        <div className="flex min-h-screen flex-col">
+          <AppChrome />
+          <main className="flex-1">{children}</main>
+        </div>
+      </AuthGate>
+    </SessionProvider>
   );
 }
 
@@ -33,14 +35,6 @@ function Waiting() {
       Loading…
     </main>
   );
-}
-
-function AuthGate({ children }: { children: React.ReactNode }) {
-  // Without Privy there is no way to authenticate anyone, so the dashboard
-  // cannot be entered at all. Mock mode covers the capability endpoint, not
-  // the employer product.
-  if (!isPrivyClientConfigured) return <NotConfigured />;
-  return <AuthGateInner>{children}</AuthGateInner>;
 }
 
 function NotConfigured() {
@@ -55,50 +49,38 @@ function NotConfigured() {
   );
 }
 
-function AuthGateInner({ children }: { children: React.ReactNode }) {
+function AuthGate({ children }: { children: React.ReactNode }) {
   const { ready, authenticated } = usePrivy();
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<SessionInfo | null>(null);
-  const [resolved, setResolved] = useState(false);
+  const { session, resolved } = useSession();
 
-  // Unauthenticated visitors never see the dashboard shell.
   useEffect(() => {
     if (ready && !authenticated) router.replace("/");
   }, [ready, authenticated, router]);
 
-  useEffect(() => {
-    if (!ready || !authenticated) return;
-    let cancelled = false;
-    (async () => {
-      const s = await resolveSession();
-      if (cancelled) return;
-      setSession(s);
-      setResolved(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, authenticated]);
+  const onWelcome = pathname === "/dashboard/welcome";
 
-  // Send people who do not belong on the dashboard where they do belong. The
-  // welcome screen is itself under /dashboard, so it must not redirect to
-  // itself.
+  // Redirect on CAPABILITY, not role: someone who has a company belongs here
+  // even if they are also a payee elsewhere. Only a person with no company at
+  // all is sent away — to /claim if they have payments, otherwise to onboarding.
   useEffect(() => {
-    if (!resolved || !session) return;
-    if (session.status === "payee") {
-      router.replace("/claim");
-    } else if (session.status === "needs-company" && pathname !== "/dashboard/welcome") {
-      router.replace("/dashboard/welcome");
-    } else if (session.status === "employer" && pathname === "/dashboard/welcome") {
-      router.replace("/dashboard");
+    if (!ready || !authenticated || !resolved || !session) return;
+    if (session.canUseDashboard) {
+      if (onWelcome) router.replace("/dashboard");
+      return;
     }
-  }, [resolved, session, pathname, router]);
+    if (session.canUseClaim) {
+      router.replace("/claim");
+    } else if (!onWelcome) {
+      router.replace("/dashboard/welcome");
+    }
+  }, [ready, authenticated, resolved, session, onWelcome, router]);
 
   if (!ready || !authenticated || !resolved) return <Waiting />;
-  if (session?.status === "payee") return <Waiting />;
-  if (session?.status === "needs-company" && pathname !== "/dashboard/welcome") {
-    return <Waiting />;
+  if (session && !session.canUseDashboard) {
+    // Only the welcome screen is reachable without a company.
+    if (!onWelcome || session.canUseClaim) return <Waiting />;
   }
 
   return <>{children}</>;

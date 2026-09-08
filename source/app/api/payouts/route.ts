@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { authErrorResponse, requireEmployer } from "@/lib/auth";
+import { notifyPayout } from "@/lib/notify";
 import { createTransfer, getTransferStatus } from "@/lib/circle";
 import {
   createPayout,
+  createPayoutRun,
   listPayees,
   listPayouts,
   listPayoutsByIds,
@@ -70,12 +72,21 @@ export async function POST(request: Request) {
   );
 
   if (queued.length === 0) {
-    return NextResponse.json({ processed: 0, payoutIds: [], payees: await listPayees(company.id) });
+    return NextResponse.json({
+      processed: 0,
+      runId: null,
+      payoutIds: [],
+      payees: await listPayees(company.id),
+    });
   }
+
+  // The run row is created first: it is the thing being confirmed, and every
+  // payout below is written against it.
+  const runId = await createPayoutRun(company.id);
 
   const payoutIds = await Promise.all(
     queued.map(async (payee) => {
-      const payout = await createPayout(company.id, payee.id, payee.amountUsdc);
+      const payout = await createPayout(company.id, runId, payee.id, payee.amountUsdc);
       await updatePayeeStatus(company.id, payee.id, "sending");
 
       try {
@@ -120,8 +131,14 @@ export async function POST(request: Request) {
     })
   );
 
+  // Notify AFTER every transfer has resolved. Each call records its own
+  // outcome on the payout row and never throws, so a bounced address cannot
+  // affect money that has already moved.
+  await Promise.all(payoutIds.map((id) => notifyPayout(id)));
+
   return NextResponse.json({
     processed: queued.length,
+    runId,
     payoutIds,
     payouts: await listPayoutsByIds(company.id, payoutIds),
     payees: await listPayees(company.id),
