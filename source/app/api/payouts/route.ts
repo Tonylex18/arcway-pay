@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authErrorResponse, requireEmployer } from "@/lib/auth";
 import { notifyPayout } from "@/lib/notify";
-import { createTransfer, getTransferStatus } from "@/lib/circle";
+import { createTransfer, getTransferStatus, getTreasuryBalance } from "@/lib/circle";
 import {
   createPayout,
   createPayoutRun,
@@ -80,6 +80,31 @@ export async function POST(request: Request) {
     });
   }
 
+  // OVERDRAFT GUARD. With finite testnet funds this is real: without it a run
+  // pays the first two recipients and fails the third, leaving a half-sent run
+  // that looks like a bug. Partial runs are legitimate when a transfer fails on
+  // chain — but not when we simply never checked the balance.
+  //
+  // Checked server-side because the client's figure is a display value; only
+  // this number decides whether money moves.
+  const treasury = await getTreasuryBalance();
+  const runTotal = queued.reduce((sum, p) => sum + p.amountUsdc, 0);
+
+  if (runTotal > treasury.amountUsdc + 1e-9) {
+    return NextResponse.json(
+      {
+        error:
+          `This run totals ${runTotal.toFixed(2)} USDC but the treasury holds ` +
+          `${treasury.amountUsdc.toFixed(2)}. Nothing was sent — top up the treasury ` +
+          `or hold some recipients back.`,
+        reason: "insufficient-funds",
+        runTotalUsdc: runTotal,
+        treasuryUsdc: treasury.amountUsdc,
+      },
+      { status: 409 }
+    );
+  }
+
   // The run row is created first: it is the thing being confirmed, and every
   // payout below is written against it.
   const runId = await createPayoutRun(company.id);
@@ -107,8 +132,20 @@ export async function POST(request: Request) {
         const final = await getTransferStatus(created.transferId);
 
         if (final.status === "complete") {
-          await updatePayoutStatus(company.id, payout.id, "sent", { transferId: created.transferId });
-          await updatePayeeStatus(company.id, payee.id, "sent", { transferId: created.transferId });
+          // Prefer the chain hash over Circle's internal transaction id — it is
+          // the thing a recipient can actually look up in an explorer.
+          const reference = final.txHash ?? created.transferId;
+          await updatePayoutStatus(company.id, payout.id, "sent", { transferId: reference });
+          await updatePayeeStatus(company.id, payee.id, "sent", { transferId: reference });
+        } else if (final.status === "pending") {
+          // Real transfers settle asynchronously. Leave both rows in flight and
+          // keep Circle's id so a later refresh can resolve them.
+          await updatePayoutStatus(company.id, payout.id, "sending", {
+            transferId: created.transferId,
+          });
+          await updatePayeeStatus(company.id, payee.id, "sending", {
+            transferId: created.transferId,
+          });
         } else {
           const reason = final.errorMessage ?? "Transfer did not complete.";
           await updatePayoutStatus(company.id, payout.id, "failed", {

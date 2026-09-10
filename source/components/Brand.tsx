@@ -11,7 +11,7 @@ export function ArcMark({ className }: { className?: string }) {
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
-      className={cn("h-[18px] w-[18px]", className)}
+      className={cn("h-4.5 w-4.5", className)}
     >
       <path
         d="M3 19.5A16.5 16.5 0 0 1 19.5 3"
@@ -36,7 +36,7 @@ export function Wordmark({
       <span className="font-display text-[26px] leading-none tracking-tight">
         Arcway
       </span>
-      <ArcMark className={cn("translate-y-[3px] text-emerald", markClassName)} />
+      <ArcMark className={cn("translate-y-0.75 text-emerald", markClassName)} />
     </span>
   );
 }

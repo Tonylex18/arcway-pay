@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { buttonClasses, Chip, Eyebrow } from "@/components/ui";
 import { ResendNotification } from "@/components/ResendNotification";
+import { apiFetch } from "@/lib/client-api";
 import type { Payout } from "@/lib/types";
 import { formatUsdc, truncateAddress } from "@/lib/utils";
 
@@ -25,7 +26,30 @@ export function RunReceipt({
 }) {
   const [payouts, setPayouts] = useState<Payout[]>(initial);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const runId = payouts[0]?.runId;
   const settled = payouts.filter((p) => p.status === "sent");
+  const inFlight = payouts.filter((p) => p.status === "sending" || p.status === "pending");
+
+  const refresh = useCallback(async () => {
+    if (!runId) return;
+    setRefreshing(true);
+    try {
+      const res = await apiFetch(`/api/runs/${runId}/refresh`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.payouts) setPayouts(data.payouts);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [runId]);
+
+  // Poll only while something is actually in flight, and stop as soon as
+  // everything has settled — no background traffic on a finished run.
+  useEffect(() => {
+    if (inFlight.length === 0) return;
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => clearInterval(timer);
+  }, [inFlight.length, refresh]);
   const failedNotices = payouts.filter((p) => p.notifyStatus === "failed");
   const total = payouts.reduce((sum, p) => sum + p.amountUsdc, 0);
 
@@ -65,6 +89,23 @@ export function RunReceipt({
             payouts.length === 1 ? "" : "s"
           }. Every line has a receipt.`}
       </p>
+
+      {inFlight.length > 0 && (
+        <div className="mt-6 flex flex-wrap items-center gap-3 rounded-card border border-line bg-card p-5">
+          <span className="h-2 w-2 animate-pulse rounded-chip bg-emerald" />
+          <span className="text-[14px] text-ink-soft">
+            {inFlight.length} transfer{inFlight.length === 1 ? "" : "s"} still
+            settling on chain. This updates itself every few seconds.
+          </span>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            className={buttonClasses("secondary", "sm", "ml-auto")}
+          >
+            {refreshing ? "Checking…" : "Check now"}
+          </button>
+        </div>
+      )}
 
       {failedNotices.length > 0 && (
         <div className="mt-6 rounded-card border border-amber-100 bg-amber-50 p-5">

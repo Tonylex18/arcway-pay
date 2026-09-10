@@ -49,6 +49,8 @@ export interface NewPayeeInput {
 export interface TransferResult {
   transferId: string;
   status: "pending" | "complete" | "failed";
+  /** The on-chain transaction hash, once the transfer has been mined. */
+  txHash?: string;
   errorMessage?: string;
 }
 

@@ -1,3 +1,4 @@
+import { isCircleConfigured } from "./circle";
 import type { ReceivedPayment } from "./types";
 
 /**
@@ -17,8 +18,17 @@ import type { ReceivedPayment } from "./types";
  * shown.
  */
 
+/**
+ * Reading the chain also requires Circle to be live.
+ *
+ * The two must agree or the page lies: with Circle in mock mode no payout ever
+ * reaches a chain, so a live `balanceOf` would report 0 for a payee whose
+ * ledger shows three payments. Deriving from the ledger is the truthful answer
+ * in that case, and it is labelled "simulated" precisely so nobody mistakes it
+ * for custody.
+ */
 export const isOnChainReadConfigured = Boolean(
-  process.env.USDC_RPC_URL && process.env.USDC_TOKEN_ADDRESS
+  process.env.USDC_RPC_URL && process.env.USDC_TOKEN_ADDRESS && isCircleConfigured
 );
 
 export interface Balance {

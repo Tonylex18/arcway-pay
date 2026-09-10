@@ -14,6 +14,7 @@ dashboard. Built as a hackathon submission for **[ETHGlobal ETHOnline
 - [Project structure](#project-structure)
 - [Getting API keys](#getting-api-keys)
 - [Running locally](#running-locally)
+- [Dependency notes (read before editing package.json)](#dependency-notes-read-before-editing-packagejson)
 - [Mock mode vs. live mode](#mock-mode-vs-live-mode)
 - [Going live: wiring real Circle Arc calls](#going-live-wiring-real-circle-arc-calls)
 - [Deploying to Vercel](#deploying-to-vercel)
@@ -138,6 +139,60 @@ npm run lint    # ESLint (flat config, eslint-config-next)
 
 This starter was built and confirmed to run `npm install && npm run build`
 successfully as part of putting this repo together.
+
+## Dependency notes (read before editing package.json)
+
+Two things in this project's dependencies look wrong and are not. Both will
+break the build if "tidied up", and both fail in ways that don't point back to
+the cause — hence this section.
+
+### `.npmrc` sets `legacy-peer-deps=true`
+
+Without it, a plain `npm install` **fails outright**:
+
+```
+Could not resolve dependency:
+  @circle-fin/developer-controlled-wallets@"*" from the root project
+Conflicting peer dependency: @solana/codecs-strings@2.3.0
+```
+
+Circle's SDK declares a `peerOptional` on `@solana/codecs-strings@^2`, while
+`@privy-io/react-auth` pulls in v8 via `@solana/kit`. The peer is *optional* and
+only used by Circle's Solana support, which this app doesn't touch — we send
+USDC on Arc — but npm still treats the version clash as fatal.
+
+It lives in `.npmrc` rather than as a `--legacy-peer-deps` flag so that local,
+CI and Vercel all resolve identically instead of depending on someone
+remembering the flag.
+
+**The file must sit next to `package.json`.** npm reads the project `.npmrc`
+from the directory containing the `package.json` it's operating on; it does not
+walk up to the repository root. An `.npmrc` one level up is silently ignored —
+`npm config get legacy-peer-deps` returns `false` and the install fails with the
+error above, with nothing pointing at the misplaced file.
+
+### `@stripe/stripe-js` is a dependency nothing imports
+
+Grep the source and you'll find no reference to it. It is still required.
+
+`@privy-io/react-auth` bundles `@stripe/crypto` for its fiat on-ramp screen, and
+that package declares `@stripe/stripe-js@^1.46.0` as a peer. Because
+`legacy-peer-deps` skips peer resolution, npm won't install it automatically —
+so it's listed as a direct dependency to force it into the tree.
+
+Remove it and the build fails at a place that names neither Stripe nor Privy as
+the culprit:
+
+```
+./node_modules/@stripe/crypto/dist/stripe.esm.js:1:1
+Error: Module not found: Can't resolve '@stripe/stripe-js'
+```
+
+It is pinned to `^1.54.2` deliberately. npm's default resolution picks v9, which
+is a major version outside the `^1.46.0` range `@stripe/crypto` asks for; that
+builds, but leaves a version mismatch inside Privy's on-ramp waiting to
+misbehave at runtime.
+
 
 ## Mock mode vs. live mode
 

@@ -1,82 +1,108 @@
 import { randomUUID } from "node:crypto";
+import {
+  initiateDeveloperControlledWalletsClient,
+  type CircleDeveloperControlledWalletsClient,
+} from "@circle-fin/developer-controlled-wallets";
 import type { TransferResult } from "./types";
 
 /**
- * USDC payout execution, via Circle's Developer-Controlled Wallets API on
- * Arc (Circle's L1 built for stablecoin finance — https://www.circle.com/arc).
+ * USDC payout execution via Circle's Developer-Controlled Wallets, on Arc
+ * (Circle's L1 for stablecoin finance — https://www.circle.com/arc).
  *
- * This is the "Arc track" half of the submission: this module is the single
- * place that talks to Circle. A dashboard "Send Payouts" click calls
- * `createTransfer()` once per pending payee; the dashboard then polls or
- * re-checks status via `getTransferStatus()`.
- *
- * Docs: https://developers.circle.com/w3s/ (Developer-Controlled Wallets)
+ * This module is the single place that talks to Circle. The official SDK does
+ * the entity-secret encryption on every request — that ciphertext is
+ * single-use and RSA-encrypted with Circle's rotating public key, so it is
+ * emphatically not something to hand-roll.
  *
  * ---------------------------------------------------------------------------
- * MOCK MODE (default, no credentials required)
+ * LIVE vs MOCK
  * ---------------------------------------------------------------------------
- * If CIRCLE_API_KEY / CIRCLE_ENTITY_SECRET are not set, every function below
- * simulates the real Circle flow instead of calling the network:
- *   - createTransfer() returns immediately with status "pending" and a
- *     generated transferId, exactly like Circle's real API would.
- *   - getTransferStatus() simulates the transfer "landing" a few seconds
- *     after creation, resolving to "complete" (occasionally "failed", to
- *     exercise the UI's failure state) so the dashboard's Sending -> Sent
- *     flow looks and feels real end-to-end.
- * This lets the whole app run and be demoed with zero external accounts.
+ * Live mode requires all THREE of CIRCLE_API_KEY, CIRCLE_ENTITY_SECRET and
+ * CIRCLE_TREASURY_WALLET_ID. Anything less is mock mode, because an API key
+ * with no treasury to send from cannot produce a transfer — treating that as
+ * "configured" would fail every payout against the real API instead of
+ * falling back cleanly.
+ *
+ * Mock mode is not decoration: X-Agent reviewers call the capability endpoint
+ * without credentials, and it must work end to end for them. Mock transfer ids
+ * are prefixed `mock_` so they can never be mistaken for a chain hash.
  *
  * ---------------------------------------------------------------------------
- * GOING LIVE: what to change
+ * A NOTE ON USDC ON ARC
  * ---------------------------------------------------------------------------
- * 1. Create a Circle sandbox account (https://console.circle.com), generate
- *    a sandbox API key, and set up Developer-Controlled Wallets (an entity
- *    secret is generated client-side with Circle's tooling and registered
- *    with your account — see their quickstart).
- * 2. Set CIRCLE_API_KEY and CIRCLE_ENTITY_SECRET in .env.local.
- * 3. Create (or reuse) one developer-controlled "treasury" wallet that will
- *    be the *source* of payouts, funded with sandbox USDC from Circle's
- *    faucet, and set its id as CIRCLE_TREASURY_WALLET_ID.
- * 4. Fill in the two fetch() calls below (createTransfer / getTransferStatus)
- *    against Circle's REST API. The general shape (subject to Circle's
- *    current API reference, since field names do shift between versions):
- *      POST https://api.circle.com/v1/w3s/developer/transactions/transfer
- *        Authorization: Bearer <CIRCLE_API_KEY>
- *        body: {
- *          idempotencyKey: <uuid>,
- *          entitySecretCipherText: <RSA-encrypted entity secret, generated
- *            per-request with Circle's public key — their Node SDK
- *            (@circle-fin/developer-controlled-wallets) does this for you
- *            and is the recommended way to avoid hand-rolling the crypto>,
- *          walletId: CIRCLE_TREASURY_WALLET_ID,
- *          tokenId: <USDC token id for the target chain/Arc testnet>,
- *          destinationAddress: <payee's Privy embedded wallet address>,
- *          amounts: [<amountUsdc as a string>],
- *          feeLevel: "MEDIUM",
- *        }
- *      GET https://api.circle.com/v1/w3s/transactions/{id}
- *        -> { transaction: { state: "COMPLETE" | "PENDING" | "FAILED" | ... } }
- *    In practice, swap the raw fetch() calls below for Circle's official
- *    SDK (`@circle-fin/developer-controlled-wallets`), which handles entity
- *    secret encryption and request signing for you — that's the realistic
- *    "day 3-5" task noted in the README punch list.
- * 5. Swap the USDC token id / chain config to target Arc's testnet instead
- *    of a generic EVM testnet once Arc testnet is available in your Circle
- *    console (see https://www.circle.com/arc for the latest network details).
+ * Arc reports USDC twice: as the native gas asset (18 decimals) and as an
+ * ERC-20 at 0x3600…0000 (6 decimals). They are two views of ONE balance — a
+ * transfer debits both identically — not two pots of money. We use the ERC-20
+ * view because 6 decimals matches `Decimal(20, 6)` in the schema and the
+ * `balanceOf` read in lib/balance.ts.
  */
 
-/**
- * Live mode requires a treasury wallet to send *from*, not just credentials.
- * An API key with no CIRCLE_TREASURY_WALLET_ID cannot produce a transfer, so
- * treating that as "configured" would fail every payout against the real API
- * instead of falling back to the mock path. All three must be present.
- */
 export const isCircleConfigured = Boolean(
   process.env.CIRCLE_API_KEY &&
     process.env.CIRCLE_ENTITY_SECRET &&
     process.env.CIRCLE_TREASURY_WALLET_ID
 );
 
-const CIRCLE_API_BASE = "https://api.circle.com/v1/w3s";
+let cachedClient: CircleDeveloperControlledWalletsClient | null = null;
+
+function getClient(): CircleDeveloperControlledWalletsClient {
+  if (!cachedClient) {
+    cachedClient = initiateDeveloperControlledWalletsClient({
+      apiKey: process.env.CIRCLE_API_KEY as string,
+      entitySecret: process.env.CIRCLE_ENTITY_SECRET as string,
+    });
+  }
+  return cachedClient;
+}
+
+function treasuryWalletId(): string {
+  return process.env.CIRCLE_TREASURY_WALLET_ID as string;
+}
+
+/**
+ * Circle transaction states, mapped onto our three-state model.
+ * INITIATED/QUEUED/PENDING/SENT all mean "in flight" — real transfers do not
+ * settle instantly, so `pending` is a normal outcome, not a problem.
+ */
+const COMPLETE_STATES = new Set(["COMPLETE", "CONFIRMED"]);
+const FAILED_STATES = new Set(["FAILED", "DENIED", "CANCELLED"]);
+
+function mapState(state: string | undefined): TransferResult["status"] {
+  if (!state) return "pending";
+  if (COMPLETE_STATES.has(state)) return "complete";
+  if (FAILED_STATES.has(state)) return "failed";
+  return "pending";
+}
+
+/**
+ * Resolves the USDC token id for the treasury's chain by reading the treasury's
+ * own balances. Deliberately not hard-coded: the id differs per environment,
+ * and reading it means the code cannot silently send the wrong asset.
+ * Cached for the process — it does not change.
+ */
+let cachedTokenId: string | null = null;
+
+async function usdcTokenId(): Promise<string> {
+  if (cachedTokenId) return cachedTokenId;
+
+  const res = await getClient().getWalletTokenBalance({ id: treasuryWalletId() });
+  const balances = res.data?.tokenBalances ?? [];
+
+  // Prefer the ERC-20 view (has a contract address) over the native one.
+  const erc20 = balances.find(
+    (b) => b.token?.symbol === "USDC" && Boolean(b.token?.tokenAddress)
+  );
+  const any = balances.find((b) => b.token?.symbol === "USDC");
+  const token = erc20 ?? any;
+
+  if (!token?.token?.id) {
+    throw new Error(
+      "No USDC balance on the treasury wallet — cannot resolve the token to send."
+    );
+  }
+  cachedTokenId = token.token.id;
+  return cachedTokenId;
+}
 
 export interface CreateTransferInput {
   /** Destination USDC wallet address (the payee's Privy embedded wallet). */
@@ -88,9 +114,10 @@ export interface CreateTransferInput {
 }
 
 /**
- * Kicks off a USDC transfer from the treasury wallet to a payee.
- * Returns immediately with a transfer id and an initial status — payouts on
- * real chains are asynchronous, so the caller polls getTransferStatus().
+ * Starts a USDC transfer from the treasury to a payee.
+ *
+ * Returns as soon as Circle accepts it. On a real chain settlement is
+ * asynchronous, so the caller polls `getTransferStatus()`.
  */
 export async function createTransfer(
   input: CreateTransferInput
@@ -98,113 +125,86 @@ export async function createTransfer(
   if (!isCircleConfigured) {
     // --- MOCK MODE ---
     await new Promise((resolve) => setTimeout(resolve, 400));
-    return {
-      transferId: `mock_${randomUUID()}`,
-      status: "pending",
-    };
+    return { transferId: `mock_${randomUUID()}`, status: "pending" };
   }
 
-  // --- REAL CIRCLE ARC API CALL ---
-  // See the module header for the exact request shape and why the official
-  // Circle SDK is the better long-term fit for entity-secret encryption.
-  const response = await fetch(`${CIRCLE_API_BASE}/developer/transactions/transfer`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.CIRCLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      idempotencyKey: input.idempotencyKey ?? randomUUID(),
-      walletId: process.env.CIRCLE_TREASURY_WALLET_ID,
+  try {
+    const tokenId = await usdcTokenId();
+    const res = await getClient().createTransaction({
+      walletId: treasuryWalletId(),
+      tokenId,
       destinationAddress: input.destinationAddress,
-      amounts: [input.amountUsdc.toString()],
-      feeLevel: "MEDIUM",
-      // TODO: set tokenId to USDC on your target chain / Arc testnet, and
-      // provide the entitySecretCipherText Circle requires per-request.
-    }),
-  });
+      // Circle takes human-readable decimal strings and applies the token's
+      // own decimals, so no base-unit conversion here. The SDK spells this
+      // `amount` even though the wire field is `amounts`.
+      amount: [String(input.amountUsdc)],
+      fee: { type: "level", config: { feeLevel: "MEDIUM" } },
+      // Retrying with the same key returns the original transaction rather
+      // than sending a second one — the difference between a safe retry and
+      // paying somebody twice.
+      idempotencyKey: input.idempotencyKey ?? randomUUID(),
+    });
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
+    const id = res.data?.id;
+    if (!id) {
+      return {
+        transferId: "",
+        status: "failed",
+        errorMessage: "Circle accepted the request but returned no transaction id.",
+      };
+    }
+
+    return { transferId: id, status: mapState(res.data?.state) };
+  } catch (err) {
     return {
       transferId: "",
       status: "failed",
-      errorMessage: `Circle API error (${response.status}): ${body}`,
+      errorMessage: describeCircleError(err),
     };
   }
-
-  const data = await response.json();
-  return {
-    transferId: data.data?.id ?? data.id ?? "",
-    status: "pending",
-  };
 }
 
-/**
- * Checks the current state of a previously-created transfer.
- */
+/** Checks the current state of a previously-created transfer. */
 export async function getTransferStatus(
   transferId: string
 ): Promise<TransferResult> {
   if (!isCircleConfigured || transferId.startsWith("mock_")) {
     // --- MOCK MODE ---
-    // Deterministically resolve based on how long ago the mock transfer was
-    // created (encoded implicitly by the caller re-polling); here we just
-    // simulate near-immediate settlement with a small, stable failure rate
-    // so the UI's "Failed" state is reachable during a demo.
+    // Settles quickly, with an occasional failure so the UI's failure path is
+    // exercised rather than theoretical.
     await new Promise((resolve) => setTimeout(resolve, 600));
-    const failed = hashToUnitInterval(transferId) < 0.08; // ~8% simulated failure rate
+    const failed = Math.random() < 0.15;
+    return failed
+      ? {
+          transferId,
+          status: "failed",
+          errorMessage: "Simulated network failure (mock mode).",
+        }
+      : { transferId, status: "complete" };
+  }
+
+  try {
+    const res = await getClient().getTransaction({ id: transferId });
+    const tx = res.data?.transaction;
+    const status = mapState(tx?.state);
+
     return {
       transferId,
-      status: failed ? "failed" : "complete",
-      errorMessage: failed ? "Simulated failure (mock mode)" : undefined,
+      status,
+      txHash: tx?.txHash ?? undefined,
+      errorMessage:
+        status === "failed"
+          ? tx?.errorReason ?? tx?.errorDetails ?? "Transfer failed on chain."
+          : undefined,
     };
+  } catch (err) {
+    return { transferId, status: "pending", errorMessage: describeCircleError(err) };
   }
-
-  // --- REAL CIRCLE ARC API CALL ---
-  const response = await fetch(`${CIRCLE_API_BASE}/transactions/${transferId}`, {
-    headers: { Authorization: `Bearer ${process.env.CIRCLE_API_KEY}` },
-  });
-
-  if (!response.ok) {
-    return {
-      transferId,
-      status: "failed",
-      errorMessage: `Circle API error (${response.status})`,
-    };
-  }
-
-  const data = await response.json();
-  const state: string = data.data?.transaction?.state ?? data.transaction?.state ?? "";
-  const status =
-    state === "COMPLETE" || state === "CONFIRMED"
-      ? "complete"
-      : state === "FAILED" || state === "CANCELLED"
-        ? "failed"
-        : "pending";
-
-  return { transferId, status };
-}
-
-/** Small, dependency-free string -> [0,1) hash used only for mock-mode variety. */
-function hashToUnitInterval(input: string): number {
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    hash = (hash * 31 + input.charCodeAt(i)) | 0;
-  }
-  return (Math.abs(hash) % 1000) / 1000;
 }
 
 /**
- * The treasury wallet's spendable USDC balance — the figure the dashboard
- * shows as "Treasury balance" and subtracts a run's total from to preview
- * the balance after.
- *
- * MOCK MODE: returns a fixed, obviously-round sandbox figure. It is labelled
- * `mocked: true` so the UI can say so rather than implying a funded treasury.
- *
- * GOING LIVE: read the wallet's token balances from
- * GET /v1/w3s/wallets/{id}/balances and pick out the USDC entry.
+ * The treasury's spendable USDC — read from Circle in live mode, so the
+ * dashboard shows what can actually be sent rather than a stored figure.
  */
 export interface TreasuryBalance {
   amountUsdc: number;
@@ -218,8 +218,31 @@ export async function getTreasuryBalance(): Promise<TreasuryBalance> {
     return { amountUsdc: MOCK_TREASURY_USDC, mocked: true };
   }
 
-  // Live path is wired in Phase 3 alongside the real transfer calls; until
-  // then fall back to the mock figure rather than inventing a number that
-  // looks authoritative.
-  return { amountUsdc: MOCK_TREASURY_USDC, mocked: true };
+  try {
+    const res = await getClient().getWalletTokenBalance({ id: treasuryWalletId() });
+    const balances = res.data?.tokenBalances ?? [];
+    const usdc =
+      balances.find((b) => b.token?.symbol === "USDC" && Boolean(b.token?.tokenAddress)) ??
+      balances.find((b) => b.token?.symbol === "USDC");
+
+    return { amountUsdc: Number(usdc?.amount ?? 0), mocked: false };
+  } catch (err) {
+    console.error("Failed to read treasury balance:", err);
+    // Zero, not the mock figure: an unreadable balance must not look like a
+    // funded treasury, and the overdraft guard should refuse rather than send.
+    return { amountUsdc: 0, mocked: false };
+  }
+}
+
+/** Circle errors nest their useful detail; surface it rather than "[object Object]". */
+function describeCircleError(err: unknown): string {
+  const anyErr = err as {
+    response?: { data?: { message?: string; code?: number } };
+    message?: string;
+  };
+  const detail = anyErr?.response?.data;
+  if (detail?.message) {
+    return detail.code ? `Circle ${detail.code}: ${detail.message}` : detail.message;
+  }
+  return anyErr?.message ?? "Unknown Circle error.";
 }
