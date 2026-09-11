@@ -35,8 +35,12 @@ export function ResendNotification({
   const [tone, setTone] = useState<"ok" | "warn">("ok");
 
   const failed = notifyStatus === "failed";
-  // Nothing has settled, so there is nothing to announce yet.
-  const unavailable = notifyStatus === "skipped" || notifyStatus === "pending";
+  // Never hidden. "skipped" means a send was attempted while the transfer was
+  // still in flight — the payout may well have settled since, in which case the
+  // recipient still needs telling. The server refuses with 409 if it genuinely
+  // has not settled, so offering the action costs nothing and hiding it strands
+  // the row.
+  const neverSent = notifyStatus === "skipped" || notifyStatus === "pending";
 
   async function resend() {
     setBusy(true);
@@ -71,15 +75,19 @@ export function ResendNotification({
     <div className={cn("flex flex-col gap-1", compact ? "items-start" : "items-end")}>
       <div className="flex items-center gap-2">
         <LastSent notifyStatus={notifyStatus} notifiedAt={notifiedAt} attempts={attempts} />
-        {!unavailable && (
-          <button
-            onClick={resend}
-            disabled={busy}
-            className={buttonClasses(failed ? "secondary" : "quiet", "sm")}
-          >
-            {busy ? "Sending…" : failed ? "Resend notification" : "Resend"}
-          </button>
-        )}
+        <button
+          onClick={resend}
+          disabled={busy}
+          className={buttonClasses(failed || neverSent ? "secondary" : "quiet", "sm")}
+        >
+          {busy
+            ? "Sending…"
+            : failed
+              ? "Resend notification"
+              : neverSent
+                ? "Send notification"
+                : "Resend"}
+        </button>
       </div>
       {message && (
         <span
@@ -108,7 +116,11 @@ function LastSent({
     return <span className="text-[12px] text-amber-text">Not delivered</span>;
   }
   if (notifyStatus === "skipped") {
-    return <span className="text-[12px] text-ink-mute">Not settled</span>;
+    return (
+      <span className="text-[12px] text-amber-text">
+        Not sent — was still in flight
+      </span>
+    );
   }
   if (notifyStatus === "pending" || !notifiedAt) {
     return <span className="text-[12px] text-ink-mute">Not sent yet</span>;

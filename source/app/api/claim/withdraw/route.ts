@@ -23,6 +23,24 @@ export async function POST(request: Request) {
   try {
     const { privyUserId, email } = await requirePayee(request);
 
+    // Refuse BEFORE writing anything. The row-first discipline elsewhere
+    // exists so a crash mid-operation still leaves a record of intent — but a
+    // withdrawal that is structurally unavailable never starts, and recording
+    // it as a "failed withdrawal" pollutes the payee's ledger with events that
+    // never happened.
+    if (isWithdrawalLive) {
+      return NextResponse.json(
+        {
+          error:
+            "Moving funds out isn't enabled yet on this deployment. Signing has to " +
+            "happen in your browser with your own wallet, and that isn't built. " +
+            "Your balance is untouched.",
+          reason: "withdrawals-unavailable",
+        },
+        { status: 503 }
+      );
+    }
+
     let body: { amountUsdc?: unknown; destinationAddress?: unknown };
     try {
       body = await request.json();
@@ -73,21 +91,6 @@ export async function POST(request: Request) {
       NETWORK_FEE_USDC,
       destinationAddress
     );
-
-    if (isWithdrawalLive) {
-      // Phase 3: the browser signs with the payee's embedded wallet and posts
-      // the hash back. Until that exists, refuse rather than pretend.
-      await settleWithdrawal(withdrawalId, "failed", {
-        failureReason: "Live withdrawals require the embedded-wallet signing flow (Phase 3).",
-      });
-      return NextResponse.json(
-        {
-          error:
-            "Live withdrawals aren't enabled on this deployment yet. Your balance is unchanged.",
-        },
-        { status: 503 }
-      );
-    }
 
     const txHash = mockTxHash();
     await settleWithdrawal(withdrawalId, "sent", { txHash });

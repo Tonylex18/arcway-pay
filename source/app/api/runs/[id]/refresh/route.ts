@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authErrorResponse, requireEmployer } from "@/lib/auth";
 import { getTransferStatus } from "@/lib/circle";
+import { notifyPayout } from "@/lib/notify";
 import { listPayoutsInRun, updatePayeeStatus, updatePayoutStatus } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -41,6 +42,15 @@ export async function POST(
           const reference = result.txHash ?? payout.transferId;
           await updatePayoutStatus(company.id, payout.id, "sent", { transferId: reference });
           await updatePayeeStatus(company.id, payout.payeeId, "sent", { transferId: reference });
+
+          // NOTIFY HERE, not only in the run route. A real transfer is usually
+          // still pending when the run responds, so the notification attempt
+          // there is skipped ("Payout did not settle") — and settlement, which
+          // happens here, is the moment the recipient can actually be told.
+          // Without this a live payout lands and nobody is ever emailed.
+          // notifyPayout never throws, so a bounced address cannot fail the
+          // refresh or reopen a settled payout.
+          await notifyPayout(payout.id);
         } else {
           const reason = result.errorMessage ?? "Transfer failed.";
           await updatePayoutStatus(company.id, payout.id, "failed", { failureReason: reason });

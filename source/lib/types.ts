@@ -123,6 +123,12 @@ export interface ClaimSummary {
   withdrawals: WithdrawalRecord[];
   /** Payments and withdrawals interleaved, newest first, with running balance. */
   ledger: LedgerEntry[];
+  /**
+   * Which withdrawal path applies. True = the payee signs a real transfer in
+   * their browser and it is broadcast to Arc; false = the simulated mock path
+   * reviewers use. Withdrawals work either way — this says which, not whether.
+   */
+  withdrawalsLive: boolean;
   balance: {
     amountUsdc: number;
     /** True when derived from the ledger rather than read from a chain. */

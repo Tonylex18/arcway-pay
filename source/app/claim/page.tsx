@@ -302,6 +302,8 @@ function ClaimInner() {
       <BalanceCard summary={summary} />
       <WithdrawPanel
         balanceUsdc={summary.balance.amountUsdc}
+        walletAddress={summary.walletAddress}
+        live={summary.withdrawalsLive}
         onComplete={load}
       />
       <WalletCard address={summary.walletAddress} />

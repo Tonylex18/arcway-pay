@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authErrorResponse, requirePayee } from "@/lib/auth";
 import { getPayeeBalance } from "@/lib/balance";
 import { buildLedger } from "@/lib/ledger";
+import { isWithdrawalLive } from "@/lib/withdraw";
 import {
   claimPayeeRows,
   listAccountsForPerson,
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
       payments,
       withdrawals,
       ledger: buildLedger(payments, withdrawals),
+      withdrawalsLive: isWithdrawalLive,
       balance,
     };
 

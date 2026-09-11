@@ -411,6 +411,79 @@ export async function sumWithdrawnForPerson(
   );
 }
 
+/**
+ * Records a withdrawal that has ALREADY been broadcast, keyed on its
+ * transaction hash.
+ *
+ * Idempotent by design: the browser broadcasts first and posts the hash
+ * second, so a client retry after a dropped response must not create a second
+ * row. The hash is the natural identity — the chain already assigned it.
+ */
+export async function recordBroadcastWithdrawal(input: {
+  payeeId: string;
+  amountUsdc: number;
+  feeUsdc: number;
+  destinationAddress: string;
+  txHash: string;
+}): Promise<{ withdrawal: WithdrawalRecord; created: boolean }> {
+  const existing = await prisma.withdrawal.findFirst({
+    where: { txHash: input.txHash },
+  });
+  if (existing) {
+    return { withdrawal: toWithdrawalRecord(existing), created: false };
+  }
+
+  try {
+    const row = await prisma.withdrawal.create({
+      data: {
+        payeeId: input.payeeId,
+        amountUsdc: new Prisma.Decimal(input.amountUsdc),
+        feeUsdc: new Prisma.Decimal(input.feeUsdc),
+        destinationAddress: input.destinationAddress,
+        txHash: input.txHash,
+        status: "sending",
+      },
+    });
+    return { withdrawal: toWithdrawalRecord(row), created: true };
+  } catch (err) {
+    // Two retries racing: whoever lost re-reads the row the other wrote.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      const row = await prisma.withdrawal.findFirst({ where: { txHash: input.txHash } });
+      if (row) return { withdrawal: toWithdrawalRecord(row), created: false };
+    }
+    throw err;
+  }
+}
+
+type WithdrawalRow = Prisma.WithdrawalGetPayload<Record<string, never>>;
+
+function toWithdrawalRecord(row: WithdrawalRow): WithdrawalRecord {
+  return {
+    id: row.id,
+    amountUsdc: row.amountUsdc.toNumber(),
+    feeUsdc: row.feeUsdc.toNumber(),
+    destinationAddress: row.destinationAddress,
+    status: row.status,
+    txHash: row.txHash ?? undefined,
+    failureReason: row.failureReason ?? undefined,
+    createdAt: row.createdAt.toISOString(),
+    sentAt: row.sentAt?.toISOString(),
+    simulated: (row.txHash ?? "").startsWith("0xmock"),
+  };
+}
+
+/** One withdrawal by hash, scoped to the person — for the settle poll. */
+export async function getWithdrawalByHash(
+  privyUserId: string,
+  email: string | null,
+  txHash: string
+): Promise<WithdrawalRecord | null> {
+  const row = await prisma.withdrawal.findFirst({
+    where: { txHash, payee: personWhere(privyUserId, email) },
+  });
+  return row ? toWithdrawalRecord(row) : null;
+}
+
 export async function createWithdrawal(
   payeeId: string,
   amountUsdc: number,

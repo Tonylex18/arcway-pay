@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { Company, User } from "@prisma/client";
 import { PrivyClient } from "@privy-io/server-auth";
 import { prisma } from "./prisma";
@@ -175,22 +176,60 @@ export interface PayeeContext {
  * a company AND be paid by another one; both surfaces must stay open to them.
  */
 export async function requirePayee(request: Request): Promise<PayeeContext> {
-  const { user, email } = await requireAuth(request);
+  const { privyUserId, email } = await verifyIdentity(request);
 
-  // `user.email` is the address stored at claim time; the token's current
-  // email is a fallback for accounts whose profile call failed.
-  const resolved = (user.email ?? email)?.toLowerCase();
+  const resolved = email?.toLowerCase();
   if (!resolved) {
     throw new AuthError("This account has no email address linked.", 403);
   }
 
+  // Deliberately NOT via requireAuth: that throws when no `User` row exists,
+  // which is the normal state of a payee arriving for the first time. The
+  // claim link in the notification email goes straight to /claim, so
+  // /api/session — the only other place that creates a payee's User row —
+  // never runs. Requiring it here locked people out of their own money with
+  // "No account for this identity yet".
   const paid = await prisma.payee.findFirst({
-    where: { OR: [{ privyUserId: user.privyUserId }, { email: resolved }] },
+    where: { OR: [{ privyUserId }, { email: resolved }] },
     select: { id: true },
   });
 
   if (!paid) {
     throw new AuthError("No payments have been sent to this email address.", 403);
+  }
+
+  let user = await prisma.user.findUnique({
+    where: { privyUserId },
+    include: { company: true },
+  });
+
+  if (!user) {
+    // Same rule as /api/session case (b), applied where it is actually
+    // needed. Being paid is what entitles someone to an account here.
+    try {
+      user = await prisma.user.create({
+        data: { privyUserId, email: resolved, role: "PAYEE" },
+        include: { company: true },
+      });
+    } catch (err) {
+      // Two tabs racing on the same first sign-in: whichever lost the unique
+      // constraint just reads the row the other created.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        user = await prisma.user.findUnique({
+          where: { privyUserId },
+          include: { company: true },
+        });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (!user) {
+    throw new AuthError("Could not resolve this account.", 403);
   }
 
   return { user, privyUserId: user.privyUserId, email: resolved };
