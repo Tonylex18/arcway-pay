@@ -26,7 +26,7 @@
     "note": "Root (/) is the product's human-facing landing page, shared with this project's ETHOnline 2026 submission; the health check is exposed at /api/health instead. See SUBMISSION.md."
   },
   "verificationEndpoint": "/.well-known/xagent-verification.json",
-  "deployedUrl": "REPLACE_WITH_VERCEL_DEPLOYMENT_URL",
+  "deployedUrl": "https://arcway-pay.vercel.app/",
   "commit": "REPLACE_WITH_DEPLOYED_COMMIT_SHA",
   "relatedSubmissions": [
     {

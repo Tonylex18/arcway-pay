@@ -43,12 +43,25 @@ export async function POST(request: Request) {
       );
     }
 
-    const company = await prisma.$transaction(async (tx) => {
-      const created = await tx.company.create({ data: { name } });
-      await tx.user.create({
-        data: { privyUserId, email, role: "EMPLOYER", companyId: created.id },
-      });
-      return created;
+    // A NESTED write, not an interactive transaction.
+    //
+    // This was `$transaction(async (tx) => ...)` with two sequential creates.
+    // An interactive transaction holds a connection open across round trips
+    // under a 5-second default, and on a cold Neon branch that budget is real
+    // — worse here than elsewhere, because lib/prisma.ts retries a dropped
+    // connection with 500ms + 1500ms of backoff, which can burn most of the
+    // window from inside the transaction before the second write is even sent.
+    //
+    // A nested create is ONE statement, and Prisma already wraps nested writes
+    // in their own transaction, so atomicity is unchanged: a company still
+    // cannot exist without the user that administers it. If the unique
+    // constraint on privyUserId loses a race, the whole write rolls back
+    // exactly as it did before.
+    const company = await prisma.company.create({
+      data: {
+        name,
+        users: { create: { privyUserId, email, role: "EMPLOYER" } },
+      },
     });
 
     return NextResponse.json(

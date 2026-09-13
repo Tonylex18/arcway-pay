@@ -231,6 +231,80 @@ export async function createPayout(
   return toPayout(row);
 }
 
+/**
+ * Records an agent-initiated payment exactly the way the dashboard records a
+ * human one — a run, a payout row inside it, and the payee moved to "sending"
+ * — in a single transaction.
+ *
+ * WHY A TRANSACTION: the payee's status and the ledger row are two halves of
+ * one fact. Written separately, a failure between them leaves a payee marked
+ * "sending" with no payout behind it (a payment that reconciles to nothing) or
+ * a payout row for a payee that never left "pending". Neither is recoverable
+ * by inspection after the fact.
+ *
+ * WHY A RUN OF ONE: `Payout.runId` is required, deliberately — a payout
+ * outside a run is a payment nobody authorised. One call to the capability
+ * endpoint IS one authorisation, so it maps cleanly onto a single-payout run,
+ * and the receipt screen renders it with no special case. The alternative,
+ * making `runId` nullable, would force every receipt, run query and reconcile
+ * path to handle a runless payout in exchange for nothing.
+ *
+ * WHY BEFORE THE TRANSFER: same order as app/api/payouts/route.ts. A crash
+ * between here and the broadcast leaves a record of what was intended; the
+ * reverse order can move money with nothing to show for it.
+ *
+ * Note there is no fee recorded here, because a dashboard payout records none
+ * either: on the employer -> payee leg gas is paid by the Circle treasury and
+ * is not itemised per recipient. `feeUsdc` belongs to `Withdrawal`, the
+ * payee-side leg, where the fee leaves the payee's own balance.
+ */
+export async function openAgentPayout(
+  companyId: string,
+  payeeId: string,
+  amountUsdc: number
+): Promise<{ runId: string; payout: Payout }> {
+  // Two statements, not three, and a BATCH transaction rather than an
+  // interactive one.
+  //
+  // The obvious shape here is `$transaction(async (tx) => ...)` with three
+  // sequential awaits. It works locally and fails in production: an
+  // interactive transaction holds a connection open across round trips under a
+  // 5-second default timeout, and against a cold Neon branch three round trips
+  // routinely exceed it — which aborts the transaction and 500s a payment that
+  // was otherwise fine. Observed, not theorised.
+  //
+  // The array form sends both statements in one batch, so there is no
+  // round-trip budget to blow, and nesting the payout inside the run's create
+  // collapses what would be two statements into one.
+  const [run] = await prisma.$transaction([
+    prisma.payoutRun.create({
+      data: {
+        companyId,
+        payouts: {
+          create: {
+            companyId,
+            payeeId,
+            amountUsdc: new Prisma.Decimal(amountUsdc),
+            status: "pending",
+          },
+        },
+      },
+      include: { payouts: { include: { payee: true } } },
+    }),
+    prisma.payee.update({
+      // Scoped by company, like every other write in this file.
+      where: { id: payeeId, companyId },
+      data: {
+        status: "sending",
+        // A repeat payment must not inherit the last attempt's failure text.
+        failureReason: null,
+      },
+    }),
+  ]);
+
+  return { runId: run.id, payout: toPayout(run.payouts[0]) };
+}
+
 export async function updatePayoutStatus(
   companyId: string,
   id: string,

@@ -51,6 +51,7 @@ model Company {
   payees  Payee[]
   payouts Payout[]
   runs    PayoutRun[]
+  apiKeys ApiKey[]
 }
 
 /// `companyId` is meaningful for EMPLOYERs — it is the company whose dashboard
@@ -196,4 +197,45 @@ model Withdrawal {
 
   @@index([payeeId])
   @@index([status])
+}
+
+/// A service credential for agent callers of POST /api/capability/pay-by-email.
+///
+/// Agents cannot complete Privy's interactive email login, so the capability
+/// endpoint authenticates by key instead of by session. A key resolves to
+/// exactly one company, and every read and write the endpoint performs is
+/// scoped to it — the same {id, companyId} rule the rest of the store follows.
+model ApiKey {
+  id        String   @id @default(cuid())
+  companyId String
+  /// SHA-256 of the presented key. The raw value is shown once at creation and
+  /// never stored.
+  ///
+  /// SHA-256 rather than bcrypt/argon2 deliberately: a key is 32 bytes of
+  /// CSPRNG output, so there is no low-entropy secret for a slow KDF to
+  /// protect. Brute-forcing 2^256 is not on the table, and a per-request KDF
+  /// would buy nothing while adding latency to a payments endpoint.
+  hashedKey String   @unique
+  label     String
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+  /// Set when revoked. Revoked keys authenticate exactly like unknown ones:
+  /// a uniform 401 that reveals nothing about whether the key ever existed.
+  revokedAt DateTime?
+
+  /// Requests allowed per minute for this key. Lower on the public reviewer
+  /// key than on a company's own keys.
+  rateLimitPerMinute Int      @default(60)
+  /// Rolling window state, updated in the SAME write as lastUsedAt so an
+  /// authenticated call costs one row update rather than two.
+  windowStartedAt    DateTime?
+  windowCount        Int      @default(0)
+
+  /// Largest single payout this key may make. Null means uncapped; the public
+  /// reviewer key sets it so a leaked key cannot drain the treasury in one call.
+  maxAmountUsdc Decimal? @db.Decimal(20, 6)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }

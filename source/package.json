@@ -14,7 +14,8 @@
     "db:studio": "node scripts/with-env.mjs prisma studio",
     "db:clean": "node scripts/with-env.mjs node scripts/db-clean.mjs",
     "postinstall": "prisma generate",
-    "vercel-build": "prisma generate && node scripts/migrate-deploy.mjs && next build"
+    "vercel-build": "prisma generate && node scripts/migrate-deploy.mjs && next build",
+    "keys:reviewer": "node scripts/with-env.mjs node scripts/seed-reviewer-key.mjs"
   },
   "keywords": [],
   "author": "",

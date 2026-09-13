@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { provisionEmbeddedWallet } from "@/lib/privy";
 import { createTransfer, getTransferStatus, isCircleConfigured } from "@/lib/circle";
-import { createPayee, listPayees, updatePayeeStatus } from "@/lib/store";
+import {
+  createPayee,
+  listPayees,
+  openAgentPayout,
+  updatePayeeStatus,
+  updatePayoutStatus,
+} from "@/lib/store";
 import { prisma } from "@/lib/prisma";
+import { authenticateApiKey, consumeRateLimit } from "@/lib/api-keys";
 
 /**
  * pay-by-email — the agent-callable capability this hackathon submission
@@ -28,8 +35,6 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const SANDBOX_COMPANY_ID = "agent-sandbox";
 
 const SCHEMA = {
   name: "pay_by_email",
@@ -61,24 +66,65 @@ const SCHEMA = {
   },
 };
 
+/**
+ * The company that unauthenticated mock-mode calls write into.
+ *
+ * Resolved by a stable label rather than a hardcoded id, and never shared with
+ * a signed-in employer's books. Only reachable when Circle is in mock mode, so
+ * nothing it records corresponds to real money.
+ */
+const OPEN_DOOR_COMPANY_NAME = "Agent Sandbox (mock mode)";
+
+async function resolveOpenDoorCompany() {
+  const existing = await prisma.company.findFirst({
+    where: { name: OPEN_DOOR_COMPANY_NAME },
+  });
+  return existing ?? prisma.company.create({ data: { name: OPEN_DOOR_COMPANY_NAME } });
+}
+
 export async function GET() {
   return NextResponse.json(SCHEMA);
 }
 
 export async function POST(request: NextRequest) {
-  // PHASE 4 GETS API-KEY AUTH. Until it does, this endpoint is unauthenticated,
-  // so it must never be able to move real money. It runs only while Circle is
-  // in mock mode; the moment live credentials (including a treasury wallet)
-  // are present, it refuses rather than spending them for an anonymous caller.
-  if (isCircleConfigured) {
+  // AUTHENTICATION. This replaces the Phase 1 stopgap that refused outright in
+  // live mode — that guard existed only because the endpoint had no way to
+  // identify its caller, so anonymous access and a funded treasury could never
+  // be allowed to coexist. A key resolves that: it names a company, and every
+  // read and write below is scoped to it.
+  //
+  // TWO DOORS, both documented in SUBMISSION.md:
+  //   - Live mode REQUIRES a key. Real money moves; callers must be named.
+  //   - Mock mode stays open, so a reviewer with no credentials at all can
+  //     still exercise the capability end to end.
+  const auth = await authenticateApiKey(request);
+
+  if (isCircleConfigured && !auth) {
+    // Uniform 401: identical for absent, malformed, unknown and revoked keys.
+    // Nothing here reveals whether a company or key exists.
     return NextResponse.json(
       {
         status: "failed",
         errorMessage:
-          "This capability is disabled while live Circle credentials are configured. Agent API keys arrive in Phase 4; until then it runs in mock mode only.",
+          "A valid API key is required. Send it as: Authorization: Bearer ark_…",
       },
-      { status: 503 }
+      { status: 401 }
     );
+  }
+
+  if (auth) {
+    // Fails OPEN by design — see consumeRateLimit. A cold database must not
+    // turn into a 503 for a reviewer.
+    const limit = await consumeRateLimit(auth.keyId);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        {
+          status: "failed",
+          errorMessage: `Rate limit exceeded for this key (${limit.limit}/min). Retry in ${limit.retryAfterSeconds}s.`,
+        },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
+    }
   }
 
   let body: { payeeName?: unknown; payeeEmail?: unknown; amountUsdc?: unknown };
@@ -102,21 +148,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "amountUsdc must be a positive number." }, { status: 400 });
   }
 
+  // Per-key ceiling. The public reviewer key sets one so that a key printed in
+  // a submission document cannot drain the treasury in a single call.
+  if (auth?.maxAmountUsdc != null && amountUsdc > auth.maxAmountUsdc) {
+    return NextResponse.json(
+      {
+        status: "failed",
+        errorMessage: `This key is limited to ${auth.maxAmountUsdc} USDC per payout.`,
+      },
+      { status: 403 }
+    );
+  }
+
+  // Set once the ledger row exists, so the catch below can resolve it rather
+  // than leaving a payout stranded at "pending" forever.
+  let openPayoutId: string | null = null;
+  let ledgerCompanyId: string | null = null;
+
   try {
     // 1. Provision (or reuse) the recipient's embedded wallet — no action
     //    required from them.
     const wallet = await provisionEmbeddedWallet(payeeEmail);
 
-    // The store is company-scoped, but an anonymous agent call has no session
-    // to resolve one from. Phase 4 replaces this with the company that owns
-    // the presented API key; in mock mode everything lands in one clearly
-    // labelled sandbox company that no real employer can sign in to, so
-    // agent traffic can never touch a tenant's books.
-    const company = await prisma.company.upsert({
-      where: { id: SANDBOX_COMPANY_ID },
-      update: {},
-      create: { id: SANDBOX_COMPANY_ID, name: "Agent Sandbox (mock mode)" },
-    });
+    // The company comes from the authenticated key. Unauthenticated calls only
+    // reach here in mock mode, where they land in a dedicated open-door company
+    // rather than any real tenant's books.
+    const company = auth
+      ? await prisma.company.findUniqueOrThrow({ where: { id: auth.companyId } })
+      : await resolveOpenDoorCompany();
+    ledgerCompanyId = company.id;
 
     // 2. Record the payee so this call shows up in the dashboard too,
     //    keeping both submission entry points backed by one shared system.
@@ -131,7 +191,13 @@ export async function POST(request: NextRequest) {
           wallet.address
         );
 
-    await updatePayeeStatus(company.id, payee.id, "sending");
+    // 2b. Open the ledger row. The payout row and the payee's "sending"
+    //     status are written in ONE transaction (see openAgentPayout) and
+    //     BEFORE the transfer — the same order and the same shape a dashboard
+    //     run produces, so an agent payment appears in Activity, gets a run
+    //     receipt, and reconciles in the payee's ledger like any other.
+    const { payout } = await openAgentPayout(company.id, payee.id, amountUsdc);
+    openPayoutId = payout.id;
 
     // 3. Execute the USDC transfer via Circle (Arc), then resolve its final
     //    state before responding, so a caller gets a definitive answer in
@@ -142,15 +208,15 @@ export async function POST(request: NextRequest) {
     });
 
     if (created.status === "failed") {
-      await updatePayeeStatus(company.id, payee.id, "failed", {
-        failureReason: created.errorMessage ?? "Transfer creation failed.",
-      });
+      const reason = created.errorMessage ?? "Transfer creation failed.";
+      await updatePayoutStatus(company.id, payout.id, "failed", { failureReason: reason });
+      await updatePayeeStatus(company.id, payee.id, "failed", { failureReason: reason });
       return NextResponse.json(
         {
           status: "failed",
           payeeId: payee.id,
           walletAddress: wallet.address,
-          errorMessage: created.errorMessage ?? "Transfer creation failed.",
+          errorMessage: reason,
         },
         { status: 502 }
       );
@@ -159,8 +225,18 @@ export async function POST(request: NextRequest) {
     const final = await getTransferStatus(created.transferId);
     const status = final.status === "complete" ? "sent" : final.status === "failed" ? "failed" : "pending";
 
-    await updatePayeeStatus(company.id, payee.id, status === "sent" ? "sent" : status === "failed" ? "failed" : "sending", {
-      transferId: created.transferId,
+    const rowStatus = status === "sent" ? "sent" : status === "failed" ? "failed" : "sending";
+    // Prefer the chain hash over Circle's internal id where we have one — it is
+    // the thing a recipient can look up in an explorer. Matches the dashboard.
+    // The API response below still returns Circle's transferId, unchanged.
+    const reference = final.txHash ?? created.transferId;
+
+    await updatePayoutStatus(company.id, payout.id, rowStatus, {
+      transferId: reference,
+      failureReason: final.errorMessage,
+    });
+    await updatePayeeStatus(company.id, payee.id, rowStatus, {
+      transferId: reference,
       failureReason: final.errorMessage,
     });
 
@@ -173,6 +249,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("pay-by-email capability failed:", err);
+    if (openPayoutId && ledgerCompanyId) {
+      // Best effort: if this write also fails there is nothing further to try,
+      // and the original error is the one worth reporting.
+      await updatePayoutStatus(ledgerCompanyId, openPayoutId, "failed", {
+        failureReason: err instanceof Error ? err.message : "Unknown error.",
+      }).catch(() => {});
+    }
     return NextResponse.json(
       { status: "failed", errorMessage: err instanceof Error ? err.message : "Unknown error." },
       { status: 500 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Chip, Eyebrow } from "@/components/ui";
+import { ApiKeysPanel } from "@/components/ApiKeysPanel";
 import { apiFetch, resolveSession } from "@/lib/client-api";
 
 /**
@@ -61,6 +62,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-center justify-between gap-4 border-b border-line-soft px-5 py-4 last:border-0">
       <Eyebrow>{label}</Eyebrow>
       {children}
+      <ApiKeysPanel />
     </div>
   );
 }
