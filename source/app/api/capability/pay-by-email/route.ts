@@ -86,7 +86,31 @@ export async function GET() {
   return NextResponse.json(SCHEMA);
 }
 
+/**
+ * The generic body for any 500. Raw exception text never reaches the caller:
+ * it carries internals — Prisma's messages include server file paths — and an
+ * agent can do nothing useful with it. The detail is logged server-side instead.
+ */
+function internalError() {
+  return NextResponse.json(
+    { status: "failed", errorMessage: "Internal error." },
+    { status: 500 }
+  );
+}
+
 export async function POST(request: NextRequest) {
+  // Last line of defence. The handler's own try only begins after auth, rate
+  // limiting and validation, so a failure before it — a database error during
+  // the key lookup, say — would otherwise escape as the framework's own 500.
+  try {
+    return await handlePost(request);
+  } catch (err) {
+    console.error("pay-by-email: unhandled error", err);
+    return internalError();
+  }
+}
+
+async function handlePost(request: NextRequest) {
   // AUTHENTICATION. This replaces the Phase 1 stopgap that refused outright in
   // live mode — that guard existed only because the endpoint had no way to
   // identify its caller, so anonymous access and a funded treasury could never
@@ -256,9 +280,6 @@ export async function POST(request: NextRequest) {
         failureReason: err instanceof Error ? err.message : "Unknown error.",
       }).catch(() => {});
     }
-    return NextResponse.json(
-      { status: "failed", errorMessage: err instanceof Error ? err.message : "Unknown error." },
-      { status: 500 }
-    );
+    return internalError();
   }
 }
