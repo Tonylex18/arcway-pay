@@ -285,37 +285,6 @@ Prisma**, since that's already your stack of choice:
    company (using the Privy user id from the session) once this needs to
    support more than one company.
 
-## Punch list: finishing before Sep 16
-
-This starter gets you a working, demoable app on day 0. Suggested pace for
-the ~12 days left, working around a full-time job search:
-
-- **Day 1–2 — Wire real Privy auth.** Get a Privy App ID/secret (see
-  above), confirm email login + embedded wallet creation actually works
-  end-to-end against Privy's servers, not mock mode. Watch for CORS/domain
-  allowlist settings in the Privy dashboard once you deploy to Vercel.
-- **Day 3–5 — Wire real Circle sandbox calls.** Set up Circle
-  Developer-Controlled Wallets, swap in the official SDK per the
-  ["Going live"](#going-live-wiring-real-circle-arc-calls) section, get one
-  real sandbox USDC transfer to land on-chain. This is the highest-risk,
-  highest-value chunk of work — start it early, budget slack.
-- **Day 6–7 — Dashboard polish.** Loading/empty states, mobile layout pass,
-  a "copy wallet address" affordance, maybe a per-payee retry-failed-payout
-  action, a link out to a block explorer for a completed transfer.
-- **Day 8 — Error handling & edge cases.** Duplicate payee emails, Circle
-  API failures mid-batch, what the UI shows if Privy/Circle env vars are
-  half-configured.
-- **Day 9 — Record the demo video.** Script it: problem -> add payee by
-  email -> show the embedded wallet got created -> send payout -> show it
-  land on Arc. Keep it tight (ETHGlobal submissions are usually a few
-  minutes).
-- **Day 10 — Write the submission.** Project description, which tracks
-  you're applying to and why (reuse the [Prize tracks](#prize-tracks-targeted)
-  table above), screenshots, the demo video, a live Vercel link.
-- **Day 11–12 — Buffer.** Something in the above will take longer than
-  planned — Circle sandbox setup usually does. Use this for fixes, not new
-  features.
-
 ## License
 
 MIT — this is a hackathon starter, do what you want with it.
