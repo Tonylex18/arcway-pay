@@ -84,7 +84,7 @@ function Nav({
   signInReady?: boolean;
 }) {
   return (
-    <header className="border-b border-line">
+    <header className="sticky top-0 z-40 border-b border-line bg-paper">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
         <Link href="/" className="text-ink">
           <Wordmark />

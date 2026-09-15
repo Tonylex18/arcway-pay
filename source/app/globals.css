@@ -80,6 +80,13 @@
   --amber-text: var(--color-amber-text);
 }
 
+/* The top bars are sticky, so in-page anchors (#how-it-works, #pricing, #docs)
+ * would otherwise scroll their heading underneath the bar. Clears the tallest
+ * one — the landing header, 77px measured — with a little room to spare. */
+html {
+  scroll-padding-top: 6rem;
+}
+
 body {
   background-color: var(--color-paper);
   color: var(--color-ink);
