@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PayeeForm, type PayeeFormValues } from "@/components/PayeeForm";
 import { PayAgain } from "@/components/PayAgain";
 import { PayeeTable } from "@/components/PayeeTable";
+import { RunReceiptModal } from "@/components/RunReceipt";
 import { isQueued } from "@/components/StatusBadge";
 import { buttonClasses, Eyebrow } from "@/components/ui";
 import type { Payee } from "@/lib/types";
@@ -28,6 +29,26 @@ export default function PayoutsPage() {
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [notice, setNotice] = useState<{ kind: "info" | "error"; text: string } | null>(null);
+  // The most recent run, for "View last receipt". The ledger is newest-first,
+  // so the first row's run is the latest. A read — nothing here writes.
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const [receiptRunId, setReceiptRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/payouts");
+        const data = await res.json();
+        if (!cancelled) setLastRunId(data.payouts?.[0]?.runId ?? null);
+      } catch {
+        // Non-essential: without it the button simply does not appear.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -161,6 +182,15 @@ export default function PayoutsPage() {
               if (file) void handleImport(file);
             }}
           />
+          {lastRunId && (
+            <button
+              type="button"
+              onClick={() => setReceiptRunId(lastRunId)}
+              className={buttonClasses("secondary", "md")}
+            >
+              View last receipt
+            </button>
+          )}
           <button
             onClick={() => fileInput.current?.click()}
             disabled={importing}
@@ -174,6 +204,9 @@ export default function PayoutsPage() {
           >
             {showForm ? "Close" : "Add payee"}
           </button>
+          {receiptRunId && (
+            <RunReceiptModal runId={receiptRunId} onClose={() => setReceiptRunId(null)} />
+          )}
         </div>
       </div>
 

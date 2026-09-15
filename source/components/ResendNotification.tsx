@@ -103,7 +103,11 @@ export function ResendNotification({
   );
 }
 
-function LastSent({
+/**
+ * Exported so the read-only receipt modal can show notification state without
+ * the resend control — the modal performs no writes.
+ */
+export function LastSent({
   notifyStatus,
   notifiedAt,
   attempts,

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { RunReceiptModal } from "@/components/RunReceipt";
 import { StatusBadge } from "@/components/StatusBadge";
-import { Chip, Eyebrow } from "@/components/ui";
+import { buttonClasses, Chip, Eyebrow } from "@/components/ui";
 import type { Payout } from "@/lib/types";
 import { formatUsdc, truncateAddress } from "@/lib/utils";
 import { apiFetch } from "@/lib/client-api";
@@ -12,6 +13,8 @@ import { apiFetch } from "@/lib/client-api";
 export default function ActivityPage() {
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [loading, setLoading] = useState(true);
+  // The run whose receipt is open in the modal, if any. Opening it changes no route.
+  const [receiptRunId, setReceiptRunId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +86,13 @@ export default function ActivityPage() {
                     <div className="text-right font-medium text-ink">
                       {formatUsdc(p.amountUsdc)} <span className="text-ink-mute">USDC</span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setReceiptRunId(p.runId)}
+                      className={buttonClasses("secondary", "sm")}
+                    >
+                      View receipt
+                    </button>
                   </div>
                 </li>
               ))}
@@ -90,6 +100,10 @@ export default function ActivityPage() {
           </div>
         )}
       </div>
+
+      {receiptRunId && (
+        <RunReceiptModal runId={receiptRunId} onClose={() => setReceiptRunId(null)} />
+      )}
     </div>
   );
 }
