@@ -1,5 +1,5 @@
 {
-  "name": "ethonline-payout-app",
+  "name": "arcway",
   "version": "0.1.0",
   "private": true,
   "description": "Cross-border USDC payout tool with Privy embedded wallets and Circle Arc, built for ETHGlobal ETHOnline 2026.",
@@ -34,7 +34,8 @@
     "@stripe/stripe-js": "^1.54.2",
     "next": "^16.3.4",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "viem": "^2.56.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
