@@ -13,14 +13,14 @@ email; each payee is automatically provisioned a Privy embedded wallet; the
 company sends them USDC via Circle. Payees claim their wallet by logging in
 with the same email, then hold, transfer, or off-ramp the funds.
 
-**Two hackathon submissions ship from this one codebase:**
+**One hackathon submission ships from this codebase:**
 
 | | Event | Deadline | What it needs from the code |
 |---|---|---|---|
-| 1 | ETHGlobal ETHOnline 2026 | **Sept 16** | The human-facing product: company dashboard + payee claim flow. Targets Privy's "Best B2B Financial Product" and Circle Arc's USDC payment-flow tracks. |
-| 2 | X-Agent AI MCP Hackathon | **Sept 19** | The agent-callable capability `POST /api/capability/pay-by-email`, plus two verification endpoints. Reviewed Sept 20–Oct 1. |
+| 1 | X-Agent AI MCP Hackathon | **Sept 19** | The agent-callable capability `POST /api/capability/pay-by-email`, plus two verification endpoints. Reviewed Sept 20–Oct 1. |
 
-ETHOnline's deadline lands **first**, so target feature-complete by ~Sept 14.
+The human-facing product (company dashboard + payee claim flow) ships from the
+same codebase, so target feature-complete by ~Sept 14.
 
 ### Non-negotiables — do not break these
 
@@ -189,7 +189,7 @@ to the right company, and an unauthenticated live-mode call is rejected.
 - Record a 2–3 minute demo video: add a payee → pay them → log in as the payee →
   see the balance → withdraw. That full loop is the story; don't just show the dashboard.
 - Update `README.md` to match what was actually built (it currently describes the scaffold).
-- Submit ETHOnline (Sept 16) and open the X-Agent PR (Sept 19).
+- Open the X-Agent PR (Sept 19).
 
 ---
 
@@ -203,8 +203,7 @@ to the right company, and an unauthenticated live-mode call is rejected.
 | Sept 12–13 | Phase 3 (real Circle) |
 | Sept 14 | Phase 4 (agent API keys) |
 | Sept 15 | Phase 5 — deploy, demo video, README |
-| Sept 16 | **Submit ETHOnline** |
-| Sept 17–18 | Buffer / polish |
+| Sept 16–18 | Buffer / polish |
 | Sept 19 | **Open X-Agent PR** |
 
 Buffer days are load-bearing — something in Phase 3 will take longer than planned,

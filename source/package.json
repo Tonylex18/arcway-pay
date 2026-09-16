@@ -2,7 +2,7 @@
   "name": "arcway",
   "version": "0.1.0",
   "private": true,
-  "description": "Cross-border USDC payout tool with Privy embedded wallets and Circle Arc, built for ETHGlobal ETHOnline 2026.",
+  "description": "Arcway pays contractors and remote staff in USDC using only their email address: each payee gets a Privy embedded wallet, and payouts settle through Circle on Arc.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

@@ -6,11 +6,10 @@ import { getCommitSha } from "@/lib/commit";
 // reviewers can confirm the deployed API matches the submitted source.
 //
 // Docs required this "at root" — since this app's actual root ("/") is the
-// product's landing page (needed for the ETHOnline submission this project
-// is shared with), it's exposed here at /api/health instead. If a reviewer
-// insists on literally "/", add a rewrite in next.config.mjs redirecting a
-// health-check User-Agent, or move the landing page to /app and mount this
-// at the true root — noted in SUBMISSION.md either way.
+// product's landing page, it's exposed here at /api/health instead. If a
+// reviewer insists on literally "/", add a rewrite in next.config.mjs
+// redirecting a health-check User-Agent, or move the landing page to /app and
+// mount this at the true root — noted in SUBMISSION.md either way.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

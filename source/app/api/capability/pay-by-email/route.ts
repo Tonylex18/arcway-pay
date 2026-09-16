@@ -20,7 +20,7 @@ import { authenticateApiKey, consumeRateLimit } from "@/lib/api-keys";
  * for someone identified only by an email address, then pay them in USDC —
  * exposed as a single, synchronous, agent-callable endpoint with an
  * unambiguous JSON input/output schema, independent of the human dashboard
- * (POST /api/payees + POST /api/payouts) built for the ETHOnline submission.
+ * (POST /api/payees + POST /api/payouts) that employers use.
  * Both entry points share the same underlying Privy + Circle logic in
  * lib/privy.ts and lib/circle.ts — this route is just a second, agent-facing
  * front door onto it, and every call here also lands in the same payee store
