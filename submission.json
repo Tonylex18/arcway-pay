@@ -1,6 +1,12 @@
 {
   "schemaVersion": 1,
   "slug": "agada-arcway-pay",
+  "name": "Arcway",
+  "sourceRepository": "https://github.com/Tonylex18/arcway-pay",
+  "reviewCommit": "d9f1108bf28255ce436aa74212ccae6313d71ee4",
+  "apiBaseUrl": "https://arcwaypay.xyz",
+  "healthCheckUrl": "https://arcwaypay.xyz/api/health",
+  "deploymentProofUrl": "https://arcwaypay.xyz/.well-known/xagent-verification.json",
   "track": "general-challenge",
   "projectName": "Arcway",
   "capabilityName": "pay_by_email",
