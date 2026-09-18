@@ -106,7 +106,7 @@ Every 401 returns byte-identical output regardless of which failure occurred, so
 
 ## Architecture
 
-**Employer** signs in with email (Privy), adds payees, and reviews a run before anything moves — totals, balance-after, and a flag on anyone who hasn't yet claimed their wallet. On confirm, Circle's developer-controlled wallet API transfers USDC to each payee on Arc. Each payout stores its own `feeUsdc`, so a receipt reopened later shows what was actually charged rather than a recomputed estimate.
+**Employer** signs in with email (Privy), adds payees, and reviews a run before anything moves — totals, balance-after, and a flag on anyone who hasn't yet claimed their wallet. On confirm, Circle's developer-controlled wallet API transfers USDC to each payee on Arc. The receipt shows the network fee actually paid, read from the transaction on chain rather than stored on the payout.
 
 **Payee** receives an email from the employer's own sending domain, signs in with that address, and sees their balance read directly from the chain. Withdrawal is signed **in their browser** by their Privy embedded wallet. The server holds no signing authority over payee funds and cannot move them — which is what makes "this wallet is yours" a true statement rather than a marketing one. The server's only role is to record the transaction hash after the broadcast has already succeeded.
 

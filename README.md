@@ -24,14 +24,14 @@ On Arc, **USDC is the native gas token**. Being paid is sufficient. A contractor
 
 ```bash
 curl -s -X POST https://arcwaypay.xyz/api/capability/pay-by-email \
-  -H "Authorization: Bearer ark_ba240ff116f75a608ef6a10985ba62cbefb5cf321e24dabccc8a8bd65d14c0ec" \
+  -H "Authorization: Bearer <reviewer-key>" \
   -H "Content-Type: application/json" \
   -d '{"payeeName":"Ada Lovelace","payeeEmail":"ada.demo@example.com","amountUsdc":0.25}'
 ```
 
 Take `walletAddress` from the response and open `https://testnet.arcscan.app/address/<walletAddress>` — the transfer is there on chain, from the treasury at `0x98c0…f8a0`.
 
-That key is public on purpose, capped at 0.5 USDC per payout and 6 requests per minute, and scoped to its own company.
+A scoped reviewer key (0.5 USDC per payout, 6 req/min, own company, revocable) is available on request through the program's private review channel — contact anthonyagada2000@gmail.com.
 
 ## Run it locally
 
