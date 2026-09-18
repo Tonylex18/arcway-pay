@@ -14,7 +14,7 @@ On Arc, **USDC is the native gas token**. Being paid is sufficient. A contractor
 
 ## How it works
 
-**Employer** → signs in with email, adds payees by name and address, reviews the run before anything moves (totals, balance-after, a flag on anyone who hasn't claimed their wallet), then confirms. USDC settles on Arc in about a second, with a receipt carrying every transaction hash.
+**Employer** → signs in with email, adds payees by name and email address, reviews the run before anything moves (totals, balance-after, a flag on anyone who hasn't claimed their wallet), then confirms. USDC settles on Arc in about a second, with a receipt carrying every transaction hash.
 
 **Payee** → gets an email, signs in with that same address, and sees a balance read directly from the chain. Withdrawals are signed **in their browser** by their own embedded wallet. The server has no authority to move their funds and never did.
 
@@ -35,7 +35,7 @@ A scoped reviewer key (0.5 USDC per payout, 6 req/min, own company, revocable) i
 
 ## Run it locally
 
-Mock mode needs no Circle, Privy or Resend credentials — only Postgres. Full steps in [SUBMISSION.md](./SUBMISSION.md#run-it-yourself-without-credentials).
+Mock mode needs no Circle, Privy or Resend credentials — only Postgres. Full steps in [SUBMISSION.md](./SUBMISSION.md#without-credentials--local-mock-mode).
 
 ## Stack
 
@@ -43,7 +43,7 @@ Next.js 16 · TypeScript · Postgres (Neon) · Prisma · Circle Developer-Contro
 
 ## Known limits
 
-One shared treasury across companies (database tenancy is enforced; funds aren't yet partitioned). Agent-initiated payouts don't send email, and don't settle past `pending` in the ledger — verify those on the explorer. The rate limiter is a fixed window and isn't concurrency-safe. Each is explained in [SUBMISSION.md](./SUBMISSION.md#known-limits).
+One shared treasury across companies (database tenancy is enforced; funds aren't yet partitioned). Agent-initiated payouts aren't settled by a background job: their status and the payee's email update only when an employer opens that run's receipt page, so verify them on the explorer. The rate limiter is a fixed window, isn't concurrency-safe, and fails open when the database is unreachable. Each is explained in [SUBMISSION.md](./SUBMISSION.md#known-limits).
 
 ---
 

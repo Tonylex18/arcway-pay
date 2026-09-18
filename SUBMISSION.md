@@ -108,9 +108,9 @@ Every 401 returns byte-identical output regardless of which failure occurred, so
 
 **Employer** signs in with email (Privy), adds payees, and reviews a run before anything moves — totals, balance-after, and a flag on anyone who hasn't yet claimed their wallet. On confirm, Circle's developer-controlled wallet API transfers USDC to each payee on Arc. The receipt shows the network fee actually paid, read from the transaction on chain rather than stored on the payout.
 
-**Payee** receives an email from the employer's own sending domain, signs in with that address, and sees their balance read directly from the chain. Withdrawal is signed **in their browser** by their Privy embedded wallet. The server holds no signing authority over payee funds and cannot move them — which is what makes "this wallet is yours" a true statement rather than a marketing one. The server's only role is to record the transaction hash after the broadcast has already succeeded.
+**Payee** receives an email from Arcway naming the employer, signs in with that address, and sees their balance read directly from the chain. Withdrawal is signed **in their browser** by their Privy embedded wallet. The server holds no signing authority over payee funds and cannot move them — which is what makes "this wallet is yours" a true statement rather than a marketing one. The server's only role is to record the transaction hash after the broadcast has already succeeded.
 
-**Agents** call `POST /api/capability/pay-by-email` with a scoped API key. Keys are SHA-256 hashed at rest, shown once at creation, revocable, rate-limited per key, and resolve to exactly one company. Every query and mutation is scoped by `companyId` — updates key on `{id, companyId}`, never `id` alone.
+**Agents** call `POST /api/capability/pay-by-email` with a scoped API key. Keys are SHA-256 hashed at rest, shown once at creation, revocable, rate-limited per key, and resolve to exactly one company. Every read and write of company-owned data is scoped to the caller's company; payee and payout updates in the store key on `{id, companyId}`.
 
 Stack: Next.js 16 · TypeScript · Postgres (Neon) · Prisma · Circle Developer-Controlled Wallets · Privy · viem · Resend · Vercel.
 
@@ -122,11 +122,11 @@ These are boundaries we chose knowingly, not defects we haven't found.
 
 **One shared treasury.** Database tenancy is fully enforced — every payee, payout and run is scoped by `companyId`. Treasury *funds* are not yet partitioned: all companies draw on a single Circle wallet. Per-company wallets, provisioned at signup with their own deposit address, are the next change.
 
-**Agent payouts don't send email.** They create the notification in a pending state; the employer triggers the send from the dashboard. This is deliberate — a public API key that could emit mail to arbitrary addresses under the employer's sending domain is a spam vector.
+**Agent payouts don't send email on demand.** The capability endpoint never sends mail itself: a public API key that could emit mail to arbitrary addresses under the deployment's sending domain would be a spam vector.
 
-**Agent payouts don't settle in the ledger.** The USDC lands on chain, but there is no webhook or scheduled job to update status afterwards — only an employer's receipt page refreshes it. So agent-initiated payments show as `pending` in Activity indefinitely. Verify those on the explorer, not in the app.
+**Agent payouts don't settle in the ledger on their own.** Agent-initiated payouts are not settled by a background job. A run's status — and the payee's notification email — updates when an employer opens that run's receipt page, which polls until the transfer settles. So a payout made through the API for an employer who never opens their dashboard stays `pending` in the ledger even though the USDC has landed on chain. Verify agent payouts on the explorer rather than in the app. The effect is that a public API key cannot emit mail to arbitrary addresses on demand, which is deliberate.
 
-**The rate limiter is a fixed window and is not concurrency-safe.** Sequential calls are capped correctly at 6/min; simultaneous calls can exceed it. It's abuse-mitigation, not a hard guarantee — which is why the reviewer key is capped at 0.5 USDC per payout.
+**The rate limiter is a fixed window and is not concurrency-safe.** Sequential calls are capped at 6 per minute within a window; because the window is fixed, a caller can make up to 12 in about 61 seconds across a boundary. The limiter also fails open when the database is unreachable. Simultaneous calls can exceed the cap. It's abuse-mitigation, not a hard guarantee — which is why the reviewer key is capped at 0.5 USDC per payout.
 
 ---
 
@@ -135,10 +135,10 @@ These are boundaries we chose knowingly, not defects we haven't found.
 Claims here were checked against the live deployment and the chain, not against the application's own reporting:
 
 - Real USDC settlement confirmed by reading `balanceOf` on the payee's wallet and the transaction receipt status from the Arc RPC — not by trusting Circle's API response.
-- Tenant isolation proven at the store layer across 17 checks.
+- Tenant isolation was proven at the store layer across 16 checks (`scripts/isolation-check.mts`). The script predates the payout-run change and no longer compiles against the current `createPayout` signature — the checks passed when written at `245547b` and the script has not been maintained since.
 - Auth failure modes verified byte-identical across five distinct causes.
 - The rate limiter verified by a burst designed so at least one refusal was guaranteed regardless of window timing, after an earlier timing-dependent test nearly produced a false pass in both directions.
-- Withdrawal gas is measured against the live chain per transaction, not assumed — the original fixed constant was 8× the real fee, which would have made the Max button wrong.
+- Withdrawal gas is estimated against the live chain for each transaction — `estimateGas` × current fee data × a 1.25 margin — rather than a fixed constant; the original constant was roughly 8× the real fee and would have made the Max button wrong. The fee recorded on the withdrawal is that padded estimate, not the amount finally paid.
 
 ---
 

@@ -112,7 +112,7 @@ You will see an incoming USDC transfer from the treasury at `0x98c0159314014953a
 
 **Do not look up `transferId` on the explorer** — it is Circle's internal transfer identifier, not a chain hash. The address view above is the correct way to verify settlement.
 
-The chain is the source of truth here for a reason: agent-initiated payouts have no webhook or scheduled job updating their status afterwards, so they remain `pending` in the application's own ledger indefinitely. That limitation is documented in [SUBMISSION.md](../SUBMISSION.md#known-limits).
+The chain is the source of truth here for a reason: agent-initiated payouts are not settled by a background job. Their status in the application's own ledger — and the payee's notification email — updates only when an employer opens that run's receipt page, so until then they stay `pending` even though the USDC has landed on chain. That limitation is documented in [SUBMISSION.md](../SUBMISSION.md#known-limits).
 
 ## 7. Check the auth model holds
 
@@ -122,7 +122,7 @@ curl -s -X POST https://arcwaypay.xyz/api/capability/pay-by-email \
   -H "Content-Type: application/json" \
   -d '{"payeeName":"Ada","payeeEmail":"ada.demo@example.com","amountUsdc":0.25}'
 
-# Over the cap -> 403, nothing written, no money moved
+# Over the cap -> 403, no payout recorded, no money moved (the key's counter and last-used time do update)
 curl -s -X POST https://arcwaypay.xyz/api/capability/pay-by-email \
   -H "Authorization: Bearer <reviewer-key>" \
   -H "Content-Type: application/json" \
