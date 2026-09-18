@@ -5,7 +5,7 @@
 Live: **https://arcwaypay.xyz**
 Repo: https://github.com/Tonylex18/arcway-pay
 Chain: Arc testnet (chainId `5042002`) · Explorer: https://testnet.arcscan.app
-Commit this submission describes: `44a2e3c5e0f9a51657c309773776eda2f0fb3128`
+Commit this submission describes: `d9f1108bf28255ce436aa74212ccae6313d71ee4`
 *(Any later commits on `main` are documentation-only.)*
 
 ---

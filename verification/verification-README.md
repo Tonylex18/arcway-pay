@@ -1,7 +1,7 @@
 # Verification
 
 Live deployment: **https://arcwaypay.xyz**
-Commit this submission describes: `44a2e3c5e0f9a51657c309773776eda2f0fb3128`
+Commit this submission describes: `d9f1108bf28255ce436aa74212ccae6313d71ee4`
 
 Production runs in **live mode**. The capability endpoint requires an API key and moves real testnet USDC on Arc.
 
@@ -11,7 +11,7 @@ Production runs in **live mode**. The capability endpoint requires an API key an
 
 ```bash
 curl -s https://arcwaypay.xyz/api/health
-# -> {"status":"ok","commit":"44a2e3c5e0f9a51657c309773776eda2f0fb3128"}
+# -> {"status":"ok","commit":"d9f1108bf28255ce436aa74212ccae6313d71ee4"}
 ```
 
 If `commit` differs, it is because documentation was updated after this commit. Any later commits on `main` are documentation-only; no application code changed.

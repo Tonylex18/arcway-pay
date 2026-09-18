@@ -43,7 +43,7 @@
   },
   "verificationEndpoint": "/.well-known/xagent-verification.json",
   "deployedUrl": "https://arcwaypay.xyz",
-  "commit": "44a2e3c5e0f9a51657c309773776eda2f0fb3128",
+  "commit": "d9f1108bf28255ce436aa74212ccae6313d71ee4",
   "mockModeAvailable": false,
   "mockModeNote": "The deployed instance runs in live mode and requires an API key. Mock mode — no Circle, Privy or Resend credentials, simulated transfers — is available when running the repository locally; see verification/README.md.",
   "license": "MIT"
