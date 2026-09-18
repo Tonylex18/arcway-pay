@@ -10,6 +10,6 @@ I confirm that this submission does not use, wrap, or resell anyone else's propr
 
 Arcway is a stablecoin payroll application. It performs no smart contract auditing, vulnerability detection or wallet risk scoring, and so falls outside the categories excluded from this hackathon.
 
-No secrets, credentials or private keys are present in this repository or its git history. The API key published in `submission.json` and `verification/README.md` is a deliberately scoped reviewer key — capped at 0.5 USDC per payout and 6 requests per minute, limited to its own company, and revocable — issued so that reviewers can exercise the capability against live infrastructure.
+One API key appears in the source repository (github.com/Tonylex18/arcway-pay): it was published there as a public reviewer key from 16 September 2026 and was revoked on 18 September 2026, so it no longer authenticates. No other secrets, credentials or private keys are present in the repository or its git history. No reviewer key is included in this submission: a scoped reviewer key (0.5 USDC per payout, 6 req/min, own company, revocable) is available on request through the program's private review channel — contact anthonyagada2000@gmail.com.
 
 Licence for my original code in this submission: **MIT**.

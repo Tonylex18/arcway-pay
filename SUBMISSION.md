@@ -20,58 +20,11 @@ The reason it works on Arc specifically: **USDC is the native gas token.** On a 
 
 ---
 
-## Verify it in 60 seconds
+## Verify it
 
-Production runs in **live mode**. This call moves real testnet USDC on Arc.
+### Without credentials — local mock mode
 
-```bash
-curl -s -X POST https://arcwaypay.xyz/api/capability/pay-by-email \
-  -H "Authorization: Bearer ark_ba240ff116f75a608ef6a10985ba62cbefb5cf321e24dabccc8a8bd65d14c0ec" \
-  -H "Content-Type: application/json" \
-  -d '{"payeeName":"Ada Lovelace","payeeEmail":"ada.demo@example.com","amountUsdc":0.25}' \
-  -w '\nHTTP %{http_code}\n'
-```
-
-Expected:
-
-```json
-{"status":"pending","payeeId":"c…","walletAddress":"0x…","transferId":"<uuid>"}
-HTTP 200
-```
-
-**To confirm the money actually moved**, take `walletAddress` from the response and open:
-
-```
-https://testnet.arcscan.app/address/<walletAddress>
-```
-
-Within a few seconds you will see an incoming USDC transfer from the treasury at `0x98c0159314014953a5b91d566daeba3fc427f8a0`.
-
-Two notes so you are not misled:
-
-- `status` is almost always `"pending"`. The endpoint checks Circle once and returns; Arc settles a moment later. Pending here means *submitted*, not *uncertain*.
-- **Do not look up `transferId` on the explorer.** It is Circle's internal transfer identifier, not a chain hash. The `walletAddress` view above is the correct way to verify.
-
-This key is public and deliberately constrained: **0.5 USDC per payout, 6 requests per minute**, scoped to its own company. It cannot read or touch any other company's data.
-
-### Error responses
-
-| Case | Status | Body |
-|---|---|---|
-| No key, wrong scheme, unknown or revoked key | 401 | `{"status":"failed","errorMessage":"A valid API key is required. Send it as: Authorization: Bearer ark_…"}` |
-| Rate limited | 429 + `Retry-After` | `{"status":"failed","errorMessage":"Rate limit exceeded for this key (6/min). Retry in 55s."}` |
-| Over the per-payout cap | 403 | `{"status":"failed","errorMessage":"This key is limited to 0.5 USDC per payout."}` |
-| Malformed JSON | 400 | `{"error":"Invalid JSON body."}` |
-| Validation | 400 | `{"error":"payeeName is required."}` etc. |
-| Circle refuses the transfer | 502 | `{"status":"failed","payeeId":"…","walletAddress":"0x…","errorMessage":"…"}` |
-
-Every 401 returns byte-identical output regardless of which failure occurred, so nothing leaks about whether a company or key exists.
-
----
-
-## Run it yourself, without credentials
-
-The repository runs in **mock mode** with no Circle, Privy or Resend keys. Transfers are simulated; everything else is the real code path.
+This is the primary credential-free way to exercise the capability: no Circle, Privy or Resend keys, and **no API key**. Transfers are simulated; everything else is the real code path.
 
 ```bash
 git clone https://github.com/Tonylex18/arcway-pay.git
@@ -104,6 +57,51 @@ curl -s -X POST http://localhost:3000/api/capability/pay-by-email \
 
 You will get `{"status":"sent", …, "transferId":"mock_…"}`. Roughly 15% of mock calls return a simulated failure on purpose, so that failure handling is exercised rather than assumed. The employer dashboard requires Privy and will report that sign-in isn't configured.
 
+### Against the live deployment — scoped key, on request
+
+Production runs in **live mode** and moves real testnet USDC on Arc. It requires an API key: a scoped reviewer key (0.5 USDC per payout, 6 req/min, own company, revocable) is available on request through the program's private review channel — contact anthonyagada2000@gmail.com.
+
+```bash
+curl -s -X POST https://arcwaypay.xyz/api/capability/pay-by-email \
+  -H "Authorization: Bearer <reviewer-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"payeeName":"Ada Lovelace","payeeEmail":"ada.demo@example.com","amountUsdc":0.25}' \
+  -w '\nHTTP %{http_code}\n'
+```
+
+Expected:
+
+```json
+{"status":"pending","payeeId":"c…","walletAddress":"0x…","transferId":"<uuid>"}
+HTTP 200
+```
+
+**To confirm the money actually moved**, take `walletAddress` from the response and open:
+
+```
+https://testnet.arcscan.app/address/<walletAddress>
+```
+
+Within a few seconds you will see an incoming USDC transfer from the treasury at `0x98c0159314014953a5b91d566daeba3fc427f8a0`.
+
+Two notes so you are not misled:
+
+- `status` is almost always `"pending"`. The endpoint checks Circle once and returns; Arc settles a moment later. Pending here means *submitted*, not *uncertain*.
+- **Do not look up `transferId` on the explorer.** It is Circle's internal transfer identifier, not a chain hash. The `walletAddress` view above is the correct way to verify.
+
+### Error responses
+
+| Case | Status | Body |
+|---|---|---|
+| No key, wrong scheme, unknown or revoked key | 401 | `{"status":"failed","errorMessage":"A valid API key is required. Send it as: Authorization: Bearer ark_…"}` |
+| Rate limited | 429 + `Retry-After` | `{"status":"failed","errorMessage":"Rate limit exceeded for this key (6/min). Retry in 55s."}` |
+| Over the per-payout cap | 403 | `{"status":"failed","errorMessage":"This key is limited to 0.5 USDC per payout."}` |
+| Malformed JSON | 400 | `{"error":"Invalid JSON body."}` |
+| Validation | 400 | `{"error":"payeeName is required."}` etc. |
+| Circle refuses the transfer | 502 | `{"status":"failed","payeeId":"…","walletAddress":"0x…","errorMessage":"…"}` |
+
+Every 401 returns byte-identical output regardless of which failure occurred, so nothing leaks about whether a company or key exists.
+
 ---
 
 ## Architecture
@@ -128,7 +126,7 @@ These are boundaries we chose knowingly, not defects we haven't found.
 
 **Agent payouts don't settle in the ledger.** The USDC lands on chain, but there is no webhook or scheduled job to update status afterwards — only an employer's receipt page refreshes it. So agent-initiated payments show as `pending` in Activity indefinitely. Verify those on the explorer, not in the app.
 
-**The rate limiter is a fixed window and is not concurrency-safe.** Sequential calls are capped correctly at 6/min; simultaneous calls can exceed it. It's abuse-mitigation, not a hard guarantee — which is why the public key is capped at 0.5 USDC per payout.
+**The rate limiter is a fixed window and is not concurrency-safe.** Sequential calls are capped correctly at 6/min; simultaneous calls can exceed it. It's abuse-mitigation, not a hard guarantee — which is why the reviewer key is capped at 0.5 USDC per payout.
 
 ---
 

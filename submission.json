@@ -10,7 +10,7 @@
     "contact": "anthonyagada2000@gmail.com",
     "github": "https://github.com/Tonylex18"
   },
-  "description": "Pay a person or business a specified amount of USDC using only their email address. Provisions a Privy embedded wallet for the recipient automatically if they don't have one, then executes the transfer via Circle's Developer-Controlled Wallets on Arc. REQUIRES AUTHENTICATION: send 'Authorization: Bearer ark_ba240ff116f75a608ef6a10985ba62cbefb5cf321e24dabccc8a8bd65d14c0ec'. This public reviewer key is scoped to its own company, capped at 0.5 USDC per payout and 6 requests per minute. Production runs in live mode and moves real testnet USDC on Arc; verify settlement on https://testnet.arcscan.app using the walletAddress returned in the response, not the transferId.",
+  "description": "Pay a person or business a specified amount of USDC using only their email address. Provisions a Privy embedded wallet for the recipient automatically if they don't have one, then executes the transfer via Circle's Developer-Controlled Wallets on Arc. Requires an API key, sent as 'Authorization: Bearer ark_…'. A scoped reviewer key (0.5 USDC per payout, 6 req/min, own company, revocable) is available on request through the program's private review channel — contact anthonyagada2000@gmail.com. Without a key, the capability runs end to end in local mock mode; see verification/README.md, step 4. Production runs in live mode and moves real testnet USDC on Arc; verify settlement on https://testnet.arcscan.app using the walletAddress returned in the response, not the transferId.",
   "capability": {
     "endpoint": "/api/capability/pay-by-email",
     "methods": ["GET", "POST"],
@@ -19,7 +19,7 @@
       "required": true,
       "type": "bearer",
       "header": "Authorization: Bearer ark_<64 hex chars>",
-      "reviewerKey": "ark_ba240ff116f75a608ef6a10985ba62cbefb5cf321e24dabccc8a8bd65d14c0ec",
+      "reviewerKeyAccess": "A scoped reviewer key (0.5 USDC per payout, 6 req/min, own company, revocable) is available on request through the program's private review channel — contact anthonyagada2000@gmail.com.",
       "limits": {
         "maxAmountUsdcPerPayout": 0.5,
         "requestsPerMinute": 6
@@ -45,6 +45,6 @@
   "deployedUrl": "https://arcwaypay.xyz",
   "commit": "d9f1108bf28255ce436aa74212ccae6313d71ee4",
   "mockModeAvailable": false,
-  "mockModeNote": "The deployed instance runs in live mode and requires an API key. Mock mode — no Circle, Privy or Resend credentials, simulated transfers — is available when running the repository locally; see verification/README.md.",
+  "mockModeNote": "The deployed instance runs in live mode and requires an API key. Local mock mode is the primary credential-free way to exercise the capability: no Circle, Privy or Resend credentials and no API key; transfers are simulated. See verification/README.md, step 4.",
   "license": "MIT"
 }
